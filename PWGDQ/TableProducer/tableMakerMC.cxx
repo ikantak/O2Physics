@@ -459,6 +459,7 @@ struct TableMakerMC {
         mcflags = 0;
         int i = 0;
         for (auto& sig : fMCSignals) {
+          //cout << "PDGcode test:" << sig.PrintConfig() << endl;
           bool checked = false;
           if constexpr (soa::is_soa_filtered_v<aod::McParticles_001>) {
             auto mctrack_raw = groupedMcTracks.rawIteratorAt(mctrack.globalIndex());

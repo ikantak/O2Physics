@@ -154,6 +154,7 @@ bool MCSignal::CheckProng(int i, bool checkSources, const T& track)
       }
       if (currentMCParticle.has_mothers() && j < fProngs[i].fNGenerations - 1) {
         currentMCParticle = currentMCParticle.template mothers_first_as<P>();
+        //std::cout << "mother particle" << currentMCParticle.pdgCode() << " index " << currentMCParticle.index() << std::endl;
       }
     } else {
       // make sure that a daughter exists in the stack before moving one generation younger
