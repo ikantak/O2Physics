@@ -1778,9 +1778,9 @@ void VarManager::FillTriple(T1 const& t1, T2 const& t2, T3 const& t3, float* val
     values[kPairMassDau] = v12.M();
     values[kMassDau] = m3;
     values[kPairPtDau] = v12.Pt();
-    values[kPt] = v3.Pt();
-    values[kDeltaMass] = v123.M() - v12.M();
-
+    values[kPt] = t3.pt();
+    values[VarManager::kDeltaMass] = v123.M() - v12.M();
+    std::cout << "photon pt " << t3.pt() << std::endl;
 }
 
 template <int pairType, typename T1, typename T2>

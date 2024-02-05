@@ -144,23 +144,25 @@ struct PCMQCMC {
     for (auto& collision : collisions) {
       reinterpret_cast<TH1F*>(fMainList->FindObject("Event")->FindObject("hZvtx_before"))->Fill(collision.posZ());
       reinterpret_cast<TH1F*>(fMainList->FindObject("Event")->FindObject("hCollisionCounter"))->Fill(1.0);
-      if (!collision.sel8()) {
-        continue;
-      }
+      //if (!collision.sel8()) {
+      //  continue;
+      //}
+      //std::cout << "collision id 1: " << collision.globalIndex() << std::endl;
       reinterpret_cast<TH1F*>(fMainList->FindObject("Event")->FindObject("hCollisionCounter"))->Fill(2.0);
 
-      if (collision.numContrib() < 0.5) {
-        continue;
-      }
+      //if (collision.numContrib() < 0.5) {
+      //  continue;
+      //}
       reinterpret_cast<TH1F*>(fMainList->FindObject("Event")->FindObject("hCollisionCounter"))->Fill(3.0);
-
-      if (abs(collision.posZ()) > 10.0) {
+      //std::cout << "xPos " << collision.posX() << " yPos " << collision.posY() << " zPos " << collision.posZ() << std::endl;
+      if (abs(collision.posZ()) > 20.0) {
         continue;
       }
       reinterpret_cast<TH1F*>(fMainList->FindObject("Event")->FindObject("hCollisionCounter"))->Fill(4.0);
       reinterpret_cast<TH1F*>(fMainList->FindObject("Event")->FindObject("hZvtx_after"))->Fill(collision.posZ());
       o2::aod::emphotonhistograms::FillHistClass<EMHistType::kEvent>(list_ev, "", collision);
       auto V0Photons_coll = v0photons.sliceBy(perCollision, collision.globalIndex());
+      //std::cout << "collision id 2: " << collision.globalIndex() << std::endl;
 
       for (const auto& cut : fPCMCuts) {
         THashList* list_v0_cut = static_cast<THashList*>(list_v0->FindObject(cut.GetName()));
@@ -175,14 +177,23 @@ struct PCMQCMC {
           if (cut.IsSelected<MyMCV0Legs>(v0)) {
             reinterpret_cast<TH1F*>(fMainList->FindObject("V0")->FindObject(cut.GetName())->FindObject("hPt_Photon_Candidate"))->Fill(v0.pt());
             reinterpret_cast<TH2F*>(fMainList->FindObject("V0")->FindObject(cut.GetName())->FindObject("hEtaPhi_Photon_Candidate"))->Fill(v0.phi(), v0.eta());
-
+            //std::cout << "v0 collision Id " << v0.collisionId() << std::endl;
             int photonid = FindCommonMotherFrom2Prongs(posmc, elemc, -11, 11, 22, mcparticles);
             if (photonid < 0) {
               continue;
             }
             auto mcphoton = mcparticles.iteratorAt(photonid);
+            //std::cout << "true photon collision Id " << v0.collisionId() << " " << photonid << " mcphoton index " << mcphoton.index() << " globalIndex " << mcphoton.globalIndex() << " momentum " << mcphoton.pt() << " x " << mcphoton.px() << " y " << mcphoton.py() << " z " << mcphoton.pz()  << std::endl;
+            //std::cout << "posmc index " << posmc.index() << " pdg " << posmc.pdgCode() << " momentum " << posmc.pt() << " x " << posmc.px() << " y " << posmc.py() << " z " << posmc.pz()  << std::endl;
+            //std::cout << "elemc index " << elemc.index() << " pdg " << elemc.pdgCode() << " momentum " << elemc.pt() << " x " <<  elemc.px() << " y " << elemc.py() << " z " << elemc.pz() << std::endl;
+            if (mcphoton.has_mothers()) {
+              //std::cout << "photon has mother " << std::endl;
+              int mother = mcphoton.mothersIds()[0];
+              auto mcmother0 = mcparticles.iteratorAt(mother);
+              //std::cout << "mcdaughter0 dpg " << mcmother0.pdgCode() << " index " << mcmother0.index() << " momentum " << mcmother0.pt() << " x " << mcmother0.px() << " y " << mcmother0.py() << " z " << mcmother0.pz() << std::endl;
+            }
 
-            o2::aod::emphotonhistograms::FillHistClass<EMHistType::kV0>(list_v0_cut, "", v0);
+              o2::aod::emphotonhistograms::FillHistClass<EMHistType::kV0>(list_v0_cut, "", v0);
             if (IsPhysicalPrimary(mcphoton.emreducedmcevent(), mcphoton, mcparticles)) {
               reinterpret_cast<TH1F*>(fMainList->FindObject("V0")->FindObject(cut.GetName())->FindObject("hPt_Photon_Primary"))->Fill(v0.pt());
               reinterpret_cast<TH2F*>(fMainList->FindObject("V0")->FindObject(cut.GetName())->FindObject("hEtaPhi_Photon_Primary"))->Fill(v0.phi(), v0.eta());

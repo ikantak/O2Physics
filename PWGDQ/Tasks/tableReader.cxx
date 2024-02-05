@@ -1536,8 +1536,8 @@ struct AnalysisDileptonPhoton {
     }
 
     // Template function to run pair - hadron combinations
-    template <int TCandidateType, uint32_t TEventFillMap, uint32_t TTrackFillMap, typename TEvent, typename TPhotons>
-    void runDileptonPhoton(TEvent const& event, TPhotons const& v0photons, soa::Filtered<MyPairCandidatesSelected> const& dileptons)
+    template <int TCandidateType, uint32_t TEventFillMap, uint32_t TTrackFillMap, typename TEvent, typename TPhotons, typename TPreslice>
+    void runDileptonPhoton(TEvent const& event, TPhotons const& v0photons, soa::Filtered<MyPairCandidatesSelected> const& dileptons, TPreslice const& perCollision)
     {
         VarManager::ResetValues(0, VarManager::kNVars, fValuesPhotons);
         VarManager::ResetValues(0, VarManager::kNVars, fValuesDilepton);
@@ -1568,8 +1568,8 @@ struct AnalysisDileptonPhoton {
             }
             //Probably have to add the if clause to get the particles from the same decay
             // loop over photons
-            //auto photons_coll = photons.sliceBy(perCollision, event.globalIndex());
-            for (auto& photon : v0photons) {
+            auto photons_coll = v0photons.sliceBy(perCollision, event.globalIndex());
+            for (auto& photon : photons_coll) {
                 VarManager::FillDileptonPhoton(dilepton, photon, fValuesPhotons);
                 fHistMan->FillHistClass("DileptonPhotonInvMass", fValuesPhotons);
             }
@@ -1680,11 +1680,11 @@ struct AnalysisDileptonPhoton {
             }
         }
     }
-
+    Preslice<MyV0Photons> perCollision = aod::v0photonkf::emreducedeventId;
     void processSkimmed(soa::Filtered<MyEventsVtxCovSelected>::iterator const& event, MyV0Photons const& v0photons, MyBarrelTracksSelectedWithCov const& tracks, soa::Filtered<MyPairCandidatesSelected> const& dileptons)
     {
-        runDileptonPhoton<VarManager::kChicToJpsiEEPhoton, gkEventFillMapWithCov, gkTrackFillMapWithCov>(event, v0photons, dileptons);
-        runDileptonPhotonFake<VarManager::kBtoJpsiEEK, gkEventFillMapWithCov, gkTrackFillMapWithCov>(event, tracks, dileptons);
+        runDileptonPhoton<VarManager::kChicToJpsiEEPhoton, gkEventFillMapWithCov, gkTrackFillMapWithCov>(event, v0photons, dileptons, perCollision);
+        //runDileptonPhotonFake<VarManager::kBtoJpsiEEK, gkEventFillMapWithCov, gkTrackFillMapWithCov>(event, tracks, dileptons);
         //runDileptonHadron<VarManager::kBtoJpsiEEK, gkEventFillMapWithCov, gkTrackFillMapWithCov>(event, tracks, dileptons);
         //std::cout << "number of runDileptonPhoton" << count_runDIleptonPhoton << std::endl;
     }

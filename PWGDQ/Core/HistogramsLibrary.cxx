@@ -838,7 +838,7 @@ void o2::aod::dqhistograms::DefineHistograms(HistogramManager* hm, const char* h
   }
 
   if (groupStr.Contains("photon")) {
-    hm->AddHistogram(histClass, "Pt", "p_{T} distribution", false, 2000, 0.0, 5.0, VarManager::kPt);
+    hm->AddHistogram(histClass, "Pt", "p_{T} distribution", false, 500, 0.0, 5.0, VarManager::kPt);
     hm->AddHistogram(histClass, "Eta", "#eta distribution", false, 500, -5.0, 5.0, VarManager::kEta);
     hm->AddHistogram(histClass, "Phi", "#varphi distribution", false, 500, -2. * TMath::Pi(), 2. * TMath::Pi(), VarManager::kPhi);
     hm->AddHistogram(histClass, "Mass_Photon", "", false, 125, 0.0, 0.1, VarManager::kMassDau);

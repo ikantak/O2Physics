@@ -144,11 +144,14 @@ struct AnalysisEventSelection {
     if (fConfigQA) {
       fHistMan->FillHistClass("Event_BeforeCuts", VarManager::fgValues); // automatically fill all the histograms in the class Event
     }
+    //cout << "before cuts event global index" << event.globalIndex()  << " index " << event.index() << " event collision time " << event.collisionTime() << endl;
+    //cout << "event posX " << event.posX() << " posY " << event.posY() << " posZ " << event.posZ() << endl;
     if (fEventCut->IsSelected(VarManager::fgValues)) {
       if (fConfigQA) {
         fHistMan->FillHistClass("Event_AfterCuts", VarManager::fgValues);
       }
       eventSel(1);
+      //cout << "after cuts event global index" << event.globalIndex()  << " index " << event.index() << " event collision time " << event.collisionTime() << endl;
     } else {
       eventSel(0);
     }
@@ -1436,8 +1439,8 @@ struct AnalysisDileptonPhoton {
     }
 
     // Template function to run pair - track combinations
-    template <int TCandidateType, uint32_t TEventFillMap, uint32_t TEventMCFillMap, uint32_t TTrackFillMap, typename TEvent, typename TPhotons, typename TEventsMC, typename TPhotonsMC, typename TTrack, typename TTracksMC, typename TV0Legs, typename TMCEMParticles> //, typename TMCEMParticles
-    void runDileptonPhoton(TEvent const& event, TPhotons const& v0photons, soa::Filtered<MyPairCandidatesSelected> const& dileptons, TEventsMC const& eventsMC, TPhotonsMC const& photonsMC,  TTrack const& tracks, TTracksMC const& tracksMC, TV0Legs const& v0legs, TMCEMParticles mcparticles) //TMCEMParticles mcparticles,
+    template <int TCandidateType, uint32_t TEventFillMap, uint32_t TEventMCFillMap, uint32_t TTrackFillMap, typename TEvent, typename TPhotons, typename TEventsMC, typename TPhotonsMC, typename TTrack, typename TTracksMC, typename TV0Legs, typename TMCEMParticles, typename TPreslice> //,
+    void runDileptonPhoton(TEvent const& event, TPhotons const& v0photons, TPreslice const& perCollision,  soa::Filtered<MyPairCandidatesSelected> const& dileptons, TEventsMC const& eventsMC, TPhotonsMC const& photonsMC,  TTrack const& tracks, TTracksMC const& groupedMCtracks, TV0Legs const& v0legs, TMCEMParticles mcparticles) //TMCEMParticles mcparticles,
     {
         VarManager::ResetValues(0, VarManager::kNVars, fValuesPhoton);
         VarManager::ResetValues(0, VarManager::kNVars, fValuesDilepton);
@@ -1451,6 +1454,8 @@ struct AnalysisDileptonPhoton {
         // Set the global index offset to find the proper lepton
         // TO DO: remove it once the issue with lepton index is solved
         int indexOffset = -999;
+        //cout << "event global index" << event.globalIndex()  << " index " << event.index() << " event collision time " << event.collisionTime() << endl;
+        //cout << "event posX " << event.posX() << " posY " << event.posY() << " posZ " << event.posZ() << endl;
         std::vector<int> trackGlobalIndexes;
         //cout << "event index "<< event.globalIndex() << endl;
         //cout << "photon index" << v0photons.globalIndex() << endl;
@@ -1458,39 +1463,146 @@ struct AnalysisDileptonPhoton {
         if (dileptons.size() > 0) {
             for (auto track : tracks) {
                 trackGlobalIndexes.push_back(track.globalIndex());
+                //uint32_t mcDecision_electron = 0;
+                //int isig_electron = 0;
+                //for (auto sig = fRecMCSignals.begin(); sig != fRecMCSignals.end(); sig++, isig_electron++) {
+                //    if ((*sig).CheckSignal(false, track.reducedMCTrack())) {
+                //        mcDecision_electron |= (uint32_t(1) << isig_electron);
+                //    }
+                //} // end loop over MC signals
+                //for (unsigned int isig_electron = 0; isig_electron < fRecMCSignals.size(); isig_electron++) {
+                //    if (mcDecision_electron & (uint32_t(1) << isig_electron)) {
+                //        VarManager::FillTrack<TTrackFillMap>(track, fValuesTrack);
+                //        fHistMan->FillHistClass(Form("LeptonSelected_matchedMC_%s", fRecMCSignalsNames[isig_electron].Data()), fValuesTrack);
+                //    }
+                //}
             }
         }
+
+
+        //for (auto trackmc : tracksMC) {
+            //cout << "trackmc pdg code" << trackmc.pdgCode() << " index " << trackmc.index() << endl;
+            //if (trackmc.pdgCode() == 22){
+            //    if (trackmc.has_daughters()) {
+            //        cout << "trackmc photon has daughter" << endl;
+            //        int daughter0 = trackmc.daughtersIds()[0];
+            //        int daughter1 = trackmc.daughtersIds()[1];
+            //          cout << "daughter0 " << daughter0 << endl;
+            //          cout << "daughter1 " << daughter1 << endl;
+            //        auto mcdaughter0 = tracksMC.rawIteratorAt(daughter0);
+            //        auto mcdaughter1 = tracksMC.rawIteratorAt(daughter1);
+            //        cout << "daughter0 dpg " << mcdaughter0.pdgCode() << " index " << mcdaughter0.index() << endl;
+            //        cout << "daughter1 dpg " << mcdaughter1.pdgCode() << " index " << mcdaughter1.index() << endl;
+            //    }
+            //}
+        //}
+        //for (auto photon : v0photons) {
+        //    cout << "photon collisision " << photon.collisionId() << " index " << photon.index() << endl;
+        //}
+        //cout << "event index "<< event.globalIndex() << endl;
+        //cout << "mcevent global index " << eventsMC.globalIndex() << endl;
+        //auto mccollision = event.mcCollision();
+        //cout << "mccollision global index " << mccollision.gobalIndex() << endl;
+        //int photon_converted = 0;
+        auto photons_coll = v0photons.sliceBy(perCollision, event.globalIndex());
         //FillPhoton histograms
-        for (auto& photon : v0photons) {
-            if (photon.collisionId() == event.globalIndex()) {
+        for (auto& photon : photons_coll) {
+            //cout << "photon collisision " << photon.collisionId() << " global index " << photon.globalIndex() << endl;
+            if (event.globalIndex() == photon.collisionId()) {
                 // check that photon candidates are really photons
                 auto pos = photon.template posTrack_as<MyMCV0Legs>();
                 auto ele = photon.template negTrack_as<MyMCV0Legs>();
                 auto posmc = pos.template emmcparticle_as<aod::EMMCParticles>();
                 auto elemc = ele.template emmcparticle_as<aod::EMMCParticles>();
-                int photonid = FindCommonMotherFrom2Prongs(posmc, elemc, -11, 11, 22, tracksMC);
-                //cout << "photonid" << photonid << endl;
+
+                int photonid = FindCommonMotherFrom2Prongs(posmc, elemc, -11, 11, 22, mcparticles);
+
                 if (photonid < 0) {
                     continue;
                 }
-                auto mcphoton = tracksMC.iteratorAt(photonid);
 
-                uint32_t mcDecision_photon = 0;
-                int isig_photon = 0;
-                for (auto sig = fRecMCSignals.begin(); sig != fRecMCSignals.end(); sig++, isig_photon++) {
-                    if ((*sig).CheckSignal(false, mcphoton)) {
-                        //cout << "signal name: " << (*sig).GetName() << endl;
-                        mcDecision_photon |= (uint32_t(1) << isig_photon);
-                    }
-                } // end loop over MC signals
-                for (unsigned int isig_photon = 0; isig_photon < fRecMCSignals.size(); isig_photon++) {
-                    if (mcDecision_photon & (uint32_t(1) << isig_photon)) {
-                        VarManager::FillPhoton<TTrackFillMap>(mcphoton, fValuesPhoton);
-                        fHistMan->FillHistClass(Form("Selected_matchedMC_%s", fRecMCSignalsNames[isig_photon].Data()), fValuesPhoton);
+                auto mcphoton = mcparticles.iteratorAt(photonid);
+                //auto mcphotontrack = mctracks.rawIteratorAt(photonid);
+                //cout << "photon id " << photon.collisionId() << " photonid " << photonid << " momentum " << photon.pt() <<  " x " << photon.px() << " y " << photon.py()<< " z " << photon.pz() << endl;
+                //cout << "mcphoton id " << mcphoton.index() << " globalIndex " << mcphoton.globalIndex() << " mcphoton pt " << mcphoton.pt() <<  " x " << mcphoton.px() << " y " << mcphoton.py() << " z " << mcphoton.pz()  << endl;
+                //cout << "posmc index " << posmc.index() << " pdg " << posmc.pdgCode() << " momentum " << posmc.pt() << " x " << posmc.px() << " y " << posmc.py() << " z " << posmc.pz()<< endl;
+                //cout << "elemc index " << elemc.index() << " pdg " << elemc.pdgCode() << " momentum " << elemc.pt() << " x " << elemc.px() << " y " << elemc.py() << " z " << elemc.pz() << endl;
+                //cout << "mcphoton track id " << mcphotontrack.index() << " mcphoton pt " << mcphotontrack.pt() <<  " x " << mcphotontrack.px() << " y " << mcphotontrack.py() << " z " << mcphotontrack.pz()  << endl;
+                //groupedMCtracks[0].globalIndex()
+                //tracksmc[10000:20000]
+                for (auto mctrack : groupedMCtracks) {
+                    //cout << "mctrack global index" << mctrack.globalIndex() << endl;
+                    if ((mcphoton.pt() == mctrack.pt()) && (mctrack.pdgCode() == 22)){
+                        //cout << "mctrack matched pdgcode" << mctrack.pdgCode() <<  " globalIndex " << mctrack.globalIndex() << " momentum " << mctrack.pt() << endl;
+                        uint32_t mcDecision_photon = 0;
+                        int isig_photon = 0;
+                        if (mctrack.has_mothers()) {
+                            //cout << "photon matched  has mother " << endl;
+                            int mother = mctrack.mothersIds()[0];
+                            //int mother1 = mcphoton.mothersIds()[1];
+                            auto mcmother0 = groupedMCtracks.rawIteratorAt(mother);
+                            //auto mcmother1 = mcparticles.iteratorAt(mother1);
+                            //cout << "mcmother0  matched dpg " << mcmother0.pdgCode() << " index " << mcmother0.index() << " momentum " << mcmother0.pt() << " x " << mcmother0.px() << " y " << mcmother0.py() << " z " << mcmother0.pz() << endl;
+
+                            for (auto sig = fRecMCSignals.begin(); sig != fRecMCSignals.end(); sig++, isig_photon++) {
+                                //cout << "signal name: " << (*sig).GetName() << endl;
+                                if ((*sig).CheckSignal(false, mctrack)) {
+                                    //cout << "signal name: " << (*sig).GetName() << endl;
+                                    //cout << "found PhotonFromChic" << endl;
+                                    mcDecision_photon |= (uint32_t(1) << isig_photon);
+                                }
+                            } // end loop over MC signals
+                            for (unsigned int isig_photon = 0; isig_photon < fRecMCSignals.size(); isig_photon++) {
+                                if (mcDecision_photon & (uint32_t(1) << isig_photon)) {
+                                    VarManager::FillPhoton<TTrackFillMap>(mctrack, fValuesPhoton);
+                                    fHistMan->FillHistClass(Form("Selected_matchedMC_%s", fRecMCSignalsNames[isig_photon].Data()),fValuesPhoton);
+                                }
+                            }
+                        }
                     }
                 }
+
+                //if (mcphoton.has_mothers()) {
+                //    cout << "photon has mother " << endl;
+                //    int mother = mcphoton.mothersIds()[0];
+                    //int mother1 = mcphoton.mothersIds()[1];
+                //    auto mcmother0 = mcparticles.iteratorAt(mother);
+                    //auto mcmother1 = mcparticles.iteratorAt(mother1);
+                //    cout << "mcdaughter0 dpg " << mcmother0.pdgCode() << " index " << mcmother0.index() << " momentum " << mcmother0.pt() << " x " << mcmother0.px() << " y " << mcmother0.py() << " z " << mcmother0.pz() << endl;
+                    //cout << "mcdaughter1 dpg " << mcmother1.pdgCode() << " index " << mcmother1.index() << " momentum " << mcmother1.pt() << " x " << mcmother1.px() << " y " << mcmother1.py() << " z " << mcmother1.pz() << endl;
+
+                //}
+                //cout << "mcphoton  global index" << mcphoton.globalIndex() << endl;
+                //cout << "mcphoton collision Id " << mcphoton.collisionId() << endl;
+                //photon_converted += 1;
+                //uint32_t mcDecision_photon = 0;
+                //int isig_photon = 0;
+                //for (auto sig = fRecMCSignals.begin(); sig != fRecMCSignals.end(); sig++) {
+                //    if ((*sig).CheckSignal(false, posmc, elemc)) {
+                //        //cout << "signal name: " << (*sig).GetName() << endl;
+                //        cout << "photon conversion worked" << endl;
+                //        for (auto sig2 = fRecMCSignals.begin(); sig2 != fRecMCSignals.end(); sig2++, isig_photon++) {
+                //            cout << "signal name: " << (*sig).GetName() << endl;
+                //            if ((*sig2).CheckSignal(false, mcphoton)) {
+                                //cout << "signal name: " << (*sig).GetName() << endl;
+                //                cout << "found PhotonFromcChic" << endl;
+                //                mcDecision_photon |= (uint32_t(1) << isig_photon);
+                //            }
+                //        }
+                //    }
+                //} // end loop over MC signals
+                //int isig_photon2 = 0;
+                //uint32_t mcDecision_photon2 = 0;
+                //for (auto sig = fRecMCSignals.begin(); sig != fRecMCSignals.end(); sig++, isig_photon2++) {
+                //   if ((*sig).CheckSignal(false, mcphoton)) {
+                //                cout << "without if clause signal name: " << (*sig).GetName() << endl;
+                //                mcDecision_photon2 |= (uint32_t(1) << isig_photon2);
+                //    }
+                //} // end loop over MC signals
+
             }
         }
+        //cout << "number photon converted " << photon_converted << endl;
 
         for (auto dilepton : dileptons) {
             int indexLepton1 = dilepton.index0Id();
@@ -1498,7 +1610,7 @@ struct AnalysisDileptonPhoton {
 
             if (indexOffset == -999) {
                 indexOffset = trackGlobalIndexes.at(0);
-                cout << "indexOffset" << indexOffset << endl;
+                //cout << "indexOffset" << indexOffset << endl;
             }
             trackGlobalIndexes.clear();
 
@@ -1524,11 +1636,128 @@ struct AnalysisDileptonPhoton {
             // run MC matching for this pair
             uint32_t mcDecision = 0;
             int isig = 0;
+            bool triplefilled = false;
             for (auto sig = fRecMCSignals.begin(); sig != fRecMCSignals.end(); sig++, isig++) {
                 if constexpr (TTrackFillMap & VarManager::ObjTypes::ReducedTrack ) { // for skimmed DQ model
                     if ((*sig).CheckSignal(false, lepton1MC, lepton2MC)) {
-                       // cout << "checkSignal dilepton true" << endl; //new
+                        //cout << "checkSignal dilepton true" << endl; //new
                         mcDecision |= (uint32_t(1) << isig);
+                        if (!triplefilled) {
+                            for (auto &photon: photons_coll) {
+                                //if (event.globalIndex() == photon.collisionId()) {
+                                auto pos = photon.template posTrack_as<MyMCV0Legs>();
+                                auto ele = photon.template negTrack_as<MyMCV0Legs>();
+                                auto posmc = pos.template emmcparticle_as<aod::EMMCParticles>();
+                                auto elemc = ele.template emmcparticle_as<aod::EMMCParticles>();
+                                int photonid = FindCommonMotherFrom2Prongs(posmc, elemc, -11, 11, 22, mcparticles);
+                                if (photonid < 0) {
+                                    continue;
+                                }
+                                auto mcphoton = mcparticles.iteratorAt(photonid);
+                                for (auto trackmc: groupedMCtracks) {
+                                    if ((mcphoton.pt() == trackmc.pt()) && (trackmc.pdgCode() == 22)) {
+                                        uint32_t mcDecision_triple = 0;
+                                        int isig_triple = 0;
+                                        if (trackmc.has_mothers()) {
+                                            cout << "photon triple has mother " << endl;
+                                            int mother = trackmc.mothersIds()[0];
+                                            auto mcmother0 = groupedMCtracks.rawIteratorAt(mother);
+                                            cout << "mcmother0 dpg " << mcmother0.pdgCode() << " index "
+                                                 << mcmother0.index()
+                                                 << " momentum " << mcmother0.pt() << " x " << mcmother0.px()
+                                                 << " y "
+                                                 << mcmother0.py() << " z " << mcmother0.pz() << endl;
+                                            cout << "before check signal print outs" << endl;
+                                            cout << "event global index" << event.globalIndex() << endl;
+                                            //cout << "event collision time " << event.collisionTime() << endl;
+                                            cout << "event index " << event.index() << endl;
+                                            cout << "photon collision index" << photon.collisionId() << endl;
+                                            //cout << "signal name: " << (*sig).GetName() << endl;
+                                            cout << "lepton1MC pdgCode " << lepton1MC.pdgCode() << "global index "
+                                                 << lepton1MC.globalIndex() << " momentum " << lepton1MC.pt()
+                                                 << endl;
+                                            cout << "lepton2MC pdgCode " << lepton2MC.pdgCode() << "global index "
+                                                 << lepton2MC.globalIndex() << " momentum " << lepton2MC.pt()
+                                                 << endl;
+                                            cout << "mcphoton pdgCode " << trackmc.pdgCode() << " index "
+                                                 << trackmc.index() << " momentum " << trackmc.pt() << " x "
+                                                 << trackmc.px() << " y " << trackmc.py() << " z " << trackmc.pz()
+                                                 << endl;
+                                             int motherlepton1 = lepton1MC.mothersIds()[0];
+                                            int motherlepton2 = lepton2MC.mothersIds()[0];
+                                            auto mcmotherlepton1 = groupedMCtracks.rawIteratorAt(motherlepton1);
+                                            auto mcmotherlepton2 = groupedMCtracks.rawIteratorAt(motherlepton2);
+                                            cout << "mcmother lepton1 " << mcmotherlepton1.pdgCode() << " index "
+                                                 << mcmotherlepton1.index() << " momenum " << mcmotherlepton1.pt()
+                                                 << endl;
+                                            cout << "mcmother lepton2 " << mcmotherlepton2.pdgCode() << " index "
+                                                 << mcmotherlepton2.index() << " momenum " << mcmotherlepton2.pt()
+                                                 << endl;
+                                            int motherjpsi = mcmotherlepton1.mothersIds()[0];
+                                            auto mcmotherjpsi = groupedMCtracks.rawIteratorAt(motherjpsi);
+                                            cout << "mcmother jpsi " << mcmotherjpsi.pdgCode() << " index "
+                                                 << mcmotherjpsi.index() << " momentum " << mcmotherjpsi.pt()
+                                                 << endl;
+                                            for (auto sig_triple = fRecMCSignals.begin();
+                                                 sig_triple != fRecMCSignals.end(); sig_triple++, isig_triple++) {
+                                                if constexpr(TTrackFillMap & VarManager::ObjTypes::ReducedTrack)
+                                                {
+                                                    //lepton1MC pdgCode 11 -> electron, lepton2MC pdgCode -11 -> positron
+                                                    if ((*sig_triple).CheckSignal(false, lepton2MC, lepton1MC,
+                                                                                  trackmc)) {
+                                                        cout << "inside if mcDecision" << endl;
+                                                        cout << "event global index" << event.globalIndex() << endl;
+                                                        //cout << "event collision time " << event.collisionTime() << endl;
+                                                        cout << "event index " << event.index() << endl;
+                                                        cout << "photon collision index" << photon.collisionId()
+                                                             << endl;
+                                                        cout << "signal name: " << (*sig_triple).GetName() << endl;
+                                                        cout << "lepton1MC pdgCode " << lepton1MC.pdgCode()
+                                                             << "global index " << lepton1MC.globalIndex()
+                                                             << " momentum " << lepton1MC.pt() << endl;
+                                                        cout << "lepton2MC pdgCode " << lepton2MC.pdgCode()
+                                                             << "global index " << lepton2MC.globalIndex()
+                                                             << " momentum " << lepton2MC.pt() << endl;
+                                                        cout << "mcphoton pdgCode " << trackmc.pdgCode()
+                                                             << " index " << trackmc.index() << " momentum "
+                                                             << trackmc.pt() << " x " << trackmc.px() << " y "
+                                                             << trackmc.py() << " z " << trackmc.pz() << endl;
+                                                        //cout << "mcphoton pdgCode " << mcphoton.pdgCode() << " index "<< mcphoton.index() << " momentum " << mcphoton.pt() << " x "<< mcphoton.px() << " y " << mcphoton.py() << " z " << mcphoton.pz()<< endl;
+                                                        //cout << "posmc index " << posmc.index() << " pdg " << posmc.pdgCode()<< " momentum " << posmc.pt() << " x " << posmc.px() << " y "<< posmc.py() << " z " << posmc.pz() << endl;
+                                                        //cout << "elemc index " << elemc.index() << " pdg " << elemc.pdgCode()<< " momentum " << elemc.pt() << " x " << elemc.px() << " y "<< elemc.py() << " z " << elemc.pz() << endl;
+                                                        //cout << "check prongs " << sig->GetNProngs() << endl;
+                                                        mcDecision_triple |= (uint32_t(1) << isig_triple);
+                                                        //cout << "mcDecision " << mcDecision << endl;
+                                                    }
+                                                }
+                                            }
+                                            for (unsigned int isig_triple = 0;
+                                                 isig_triple < fRecMCSignals.size(); isig_triple++) {
+                                                if (mcDecision_triple & (uint32_t(1) << isig_triple)) {
+                                                    cout << "inside MCmatch histo" << endl;
+                                                    VarManager::FillTriple(lepton1MC, lepton2MC, trackmc);
+                                                    cout << "fRecMCSignalsNames[isig_triple].Data() "
+                                                         << fRecMCSignalsNames[isig_triple].Data()
+                                                         << endl;
+                                                    //cout << "kPairMass: " << VarManager::fgValues[293] << endl;
+                                                    //cout << "kPairPt " << VarManager::fgValues[296] << endl;
+                                                    //cout << "kPairMassDau: " << VarManager::fgValues[294] << endl;
+                                                    //cout << "kPairDeltaMass: " << VarManager::fgValues[311] << endl;
+                                                    //cout << "kPairPtDau " << VarManager::fgValues[297] << endl;
+                                                    //cout << "kMassDau " << VarManager::fgValues[295] << endl;
+                                                    //cout << "fValuesDileptonPhoton deltaMass " << fValuesDileptonPhoton[293] << endl;
+                                                    cout << "before filling histogram" << endl;
+                                                    fHistMan->FillHistClass(Form("DileptonPhotonInvMass_matchedMC_%s",fRecMCSignalsNames[isig_triple].Data()),VarManager::fgValues);
+                                                    triplefilled = true;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                              //  }
+                            }
+                        }
+                        //cout << "event global index dilepton matched " << event.globalIndex() << endl;
                     }
                 }
             } // end loop over MC signals
@@ -1541,116 +1770,62 @@ struct AnalysisDileptonPhoton {
                     fHistMan->FillHistClass(Form("DileptonsSelected_matchedMC_%s", fRecMCSignalsNames[isig].Data()), fValuesDilepton);
                 }
             }
-            //??Here I need something else
-            //if (fConfigFillCandidateTable.value) {
-            //    dileptonPhotonCandidatesList.reserve(1);
-            //}
+            //cout << "percolllision " << perCollision::EMReducedEventId << endl;
 
-            //std::cout << "number v0photons_coll" << V0Photons_coll.size() << std::endl;
-            for (auto& photon : v0photons) { //before v0photons
-                //auto pos = photon.template posTrack_as<MyMCV0Legs>();
-                //auto ele = photon.template negTrack_as<MyMCV0Legs>();
-                //auto posmc = pos.template emmcparticle_as<aod::EMMCParticles>();
-                //auto elemc = ele.template emmcparticle_as<aod::EMMCParticles>();
-                //int photonid = FindCommonMotherFrom2Prongs(posmc, elemc, -11, 11, 22, tracksMC);
+            //cout << "photons_coll " << photons_coll << endl;
+            //cout << "number v0photons_coll" << photons_coll.size() <<endl;
+            for (auto& photon : photons_coll) {
 
-                //if (photonid < 0) {
-                //    continue;
+                //cout << "event global index" << event.globalIndex()  << " index " << event.index() << " event collision time " << event.collisionTime() << endl;
+                //cout << "em event global index" << emevent.globalIndex()  << " index " << emevent.index() << " collision time " << emevent.collisionTime() << endl;
+                //posx, poy, posz
+                //auto leg1 = photon.posTrack();
+                //auto leg2 = photon.negTrack();
+
+                //cout << "photon collision index" << photon.collisionId() << " gamma " << photon.mGamma() << endl; //<< " posTrack "  << leg1.collisionId() << " negTrack " << leg2.collisionId() << " gamma " << photon.mGamma() <<  endl;
+                //error ReducedEventId() and PosX, PosY, PosZ
+                //cout << "lepton1MC posX " << lepton1MC.PosX() << " posY " << lepton1MC.PosY() << " posZ " << lepton1MC.PosZ() << endl;
+                //cout << "lepton1 posX " << lepton1.PosX() << " posY " << lepton1.PosY() << " posZ " << lepton1.PosZ() << endl;
+                //cout << "photon posX " << photon.posX() << " posY " << photon.posY() << " posZ " << photon.posZ() << endl;
+                //cout << "lepton1 " << lepton1.index() << endl;
+                //cout << "em event posX " << emevent.posX() << " posY " << emevent.posY() << " posZ " << emevent.posZ() << endl;
+                //cout << "event posX " << event.posX() << " posY " << event.posY() << " posZ " << event.posZ() << endl;
+                //cout << "photon index: " << photon.globalIndex() << endl;
+                //if (photon.has_daughters()) {
+                //    cout << "photon has daughter" << endl;
+                //    int daughter0 = photon.daughtersIds()[0];
+                //    int daughter1 = photon.daughtersIds()[1];
+                    //auto mcdaughter0 = groupedMCTracks.rawIteratorAt(daughter0);
+                    //auto mcdaughter1 = groupedMCTracks.rawIteratorAt(daughter1);
+                    //cout << "mcdaughter0 dpg " << mcdaughter0.pdgCode() << " index " << mcdaughter0.index() << endl;
+                    //cout << "mcdaughter1 dpg " << mcdaughter1.pdgCode() << " index " << mcdaughter1.index() << endl;
                 //}
-                //auto mcphoton = tracksMC.iteratorAt(photonid);
-                //cout << "lepton1MC pdgCode " << lepton1MC.pdgCode() << " index " << lepton1MC.globalIndex() << endl;
-                //cout << "lepton2MC pdgCode " << lepton2MC.pdgCode() << " index " << lepton2MC.globalIndex() << endl;
-                //cout << "event index" << event.globalIndex() << endl;
-                //cout << "photon collision index" << photon.collisionId() << endl;
-                //cout << "mcphoton pdgCode " << mcphoton.pdgCode() << " index " << mcphoton.index() << endl;
-                //cout << "posmc index " << posmc.index() << endl;
-                //cout << "elemc index " << elemc.index() << endl;
-                //cout << "mcphoton collisionId " << mcphoton.collisionId() << endl;
-                //cout << "posmc collisionId " << posmc.collisionId() << endl;
-                //cout << "elemc collisionId " << elemc.collisionId() << endl;
+                //cout << "filling DileptonPhoton" << endl;
+                //if (event.globalIndex() == photon.collisionId()) {
+                VarManager::FillDileptonPhoton(dilepton, photon, fValuesPhoton);
+                fHistMan->FillHistClass("DileptonPhotonInvMass", fValuesPhoton);
 
-                if (photon.collisionId() == event.globalIndex()) {
-                    //cout << "before DileptonPhotonInvMass" << endl;
-                    //cout << "photon collision index" << photon.collisionId() << endl;
-                    //cout << "event index "<< event.globalIndex() << endl;
-                    VarManager::FillDileptonPhoton(dilepton, photon, fValuesPhoton);
-                    fHistMan->FillHistClass("DileptonPhotonInvMass", fValuesPhoton);
 
-                    auto pos = photon.template posTrack_as<MyMCV0Legs>();
-                    auto ele = photon.template negTrack_as<MyMCV0Legs>();
-                    auto posmc = pos.template emmcparticle_as<aod::EMMCParticles>();
-                    auto elemc = ele.template emmcparticle_as<aod::EMMCParticles>();
-                    //cout << mcparticles.pdgCode() << endl;
-                    //cout << "before find commomMother" << endl;
-                    int photonid = FindCommonMotherFrom2Prongs(posmc, elemc, -11, 11, 22, tracksMC);
-
-                    if (photonid < 0) {
-                        continue;
-                    }
                     //cout << "photon collisionId: " << photon.collisionId() << endl;
                     //cout << "photonid: " << photonid << endl;
-                    auto mcphoton = tracksMC.iteratorAt(photonid); //- indexOffset
+                     //- indexOffset
+                    //cout << "lepton1MC pdgCode " << lepton1MC.pdgCode() << " index " << lepton1MC.globalIndex() << endl;
+                    //cout << "lepton2MC pdgCode " << lepton2MC.pdgCode() << " index " << lepton2MC.globalIndex() << endl;
+                    //cout << "mcphoton pdgCode " << mcphoton.pdgCode() << " index " << mcphoton.index()   << endl;
 
-                    //FillPhoton histograms
-                    uint32_t mcDecision_photon = 0;
-                    int isig_photon = 0;
-                    for (auto sig = fRecMCSignals.begin(); sig != fRecMCSignals.end(); sig++, isig_photon++) {
-                        if ((*sig).CheckSignal(false, mcphoton)) {
-                            //cout << "signal name: " << (*sig).GetName() << endl;
-                            mcDecision_photon |= (uint32_t(1) << isig_photon);
-                        }
-                    } // end loop over MC signals
-                    for (unsigned int isig_photon = 0; isig_photon < fRecMCSignals.size(); isig_photon++) {
-                        if (mcDecision_photon & (uint32_t(1) << isig_photon)) {
-                            //cout << "filling photon histogram" << endl;
-                            VarManager::FillPhoton<TTrackFillMap>(mcphoton, fValuesPhoton);
-                            fHistMan->FillHistClass(Form("LeptonSelected_matchedMC_%s", fRecMCSignalsNames[isig_photon].Data()), fValuesPhoton);
-                        }
-                    }
+                    //cout << "posmc index " << posmc.index() << " pdg " << posmc.pdgCode() << endl;
+                    //cout << "elemc index " << elemc.index() << " pdg " << elemc.pdgCode() << endl;
+                    //cout << "photonid " << photonid << endl;
                     //cout << "mcphoton" << endl;
-                    uint32_t mcDecision_triple = 0;
-                    isig = 0;
-                    for (auto sig = fRecMCSignals.begin(); sig != fRecMCSignals.end(); sig++, isig++) {
-                        //cout << "inside for loop" << endl;
-                        //cout << "signal name: " << (*sig).GetName() <<endl;
-                        // have to change the next line for photon
-                        if constexpr (TTrackFillMap & VarManager::ObjTypes::ReducedTrack ) {
-                            //cout << "after first if clause " << endl; // for skimmed DQ model
-                            //cout << "lepton1MC pdgCode" << lepton1MC.pdgCode() << "index " << lepton1MC.globalIndex() << endl;
-                            //cout << "lepton2MC pdgCode" << lepton2MC.pdgCode() << "index " << lepton2MC.globalIndex() << endl;
-                            //cout << "mcphoton pdgCode " << mcphoton.pdgCode() << "index " << mcphoton.index() << endl;
 
-                            //lepton1MC pdgCode 11 -> electron, lepton2MC pdgCode -11 -> positron
-                            //I only get false back from the CheckSignal - statistic problem?
-                            if ((*sig).CheckSignal(false, lepton2MC, lepton1MC, mcphoton)) {
-                                cout << "inside if mcDecision" << endl;
-                                cout << "lepton1MC pdgCode " << lepton1MC.pdgCode() << " index " << lepton1MC.globalIndex() << endl;
-                                cout << "lepton2MC pdgCode " << lepton2MC.pdgCode() << " index " << lepton2MC.globalIndex() << endl;
-                                cout << "mcphoton pdgCode " << mcphoton.pdgCode() << " index " << mcphoton.index() << endl;
-                                mcDecision_triple |= (uint32_t(1) << isig);
-                                //cout << "mcDecision " << mcDecision << endl;
-                            }
-                        }
-
-                    //}
                     //if (fConfigFillCandidateTable.value) {
                     //    cout << "inside if FillCandidateTable" << endl;
                     //    dileptonPhotonCandidatesList(mcDecision, fValuesPhoton[VarManager::kPairMass], fValuesPhoton[VarManager::kPairPt], fValuesPhoton[VarManager::kPairEta], fValuesPhoton[VarManager::kVertexingTauz], fValuesPhoton[VarManager::kVertexingTauxy], fValuesPhoton[VarManager::kVertexingLz], fValuesPhoton[VarManager::kVertexingLxy]);
                     //    //dileptonList(event, VarManager::fgValues[VarManager::kMass], VarManager::fgValues[VarManager::kPt], VarManager::fgValues[VarManager::kEta], VarManager::fgValues[VarManager::kPhi], lepton1.sign() + lepton2.sign(), dileptonFilterMap, dileptonMcDecision);
                     //    //dileptonExtraList(t1.globalIndex(), t2.globalIndex(), VarManager::fgValues[VarManager::kVertexingTauz], VarManager::fgValues[VarManager::kVertexingLz], VarManager::fgValues[VarManager::kVertexingLxy]);
-
                     //}
 
-                    }
-                    for (unsigned int isig = 0; isig < fRecMCSignals.size(); isig++) {
-                        //Don't enter in the if clause
-                        if (mcDecision_triple & (uint32_t(1) << isig)) {
-                            cout << "inside MCmatch histo" << endl;
-                            VarManager::FillTriple(lepton1MC, lepton2MC, mcphoton, fValuesDileptonPhoton);
-                            fHistMan->FillHistClass(Form("DileptonPhotonInvMass_matchedMC_%s", fRecMCSignalsNames[isig].Data()), fValuesDileptonPhoton);
-                        }
-                    }
-                }
+               // }
             }
         }
     }
@@ -1664,7 +1839,31 @@ struct AnalysisDileptonPhoton {
         //cout << "before for loop of groupedMCTracks" << endl;
         for (auto& mctrack : groupedMCTracks) {
             VarManager::FillTrackMC(groupedMCTracks, mctrack);
-            //cout << "mctrack pdgcode" << mctrack.pdgCode() <<  " globalIndex " << mctrack.globalIndex() << endl;
+            //cout << "mctrack pdgcode" << mctrack.pdgCode() <<  " globalIndex " << mctrack.globalIndex() << " momentum " << mctrack.pt() << endl;
+
+            if (mctrack.pdgCode() == 22){
+                //cout << "mctrack pdgcode" << mctrack.pdgCode() <<  " globalIndex " << mctrack.globalIndex() << " momentum " << mctrack.pt() << endl;
+                if (mctrack.has_daughters()) {
+                    //cout << "mctrack has daughter" << endl;
+                    int daughter0 = mctrack.daughtersIds()[0];
+                    int daughter1 = mctrack.daughtersIds()[1];
+                    auto mcdaughter0 = groupedMCTracks.rawIteratorAt(daughter0);
+                    auto mcdaughter1 = groupedMCTracks.rawIteratorAt(daughter1);
+                    //cout << "mcdaughter0 dpg " << mcdaughter0.pdgCode() << " index " << mcdaughter0.index() << " momentum " << mcdaughter0.pt() << " x " << mcdaughter0.px() << " y " << mcdaughter0.py() << " z " << mcdaughter0.pz() << endl;
+                    //cout << "mcdaughter1 dpg " << mcdaughter1.pdgCode() << " index " << mcdaughter1.index() << " momentum " << mcdaughter1.pt() << " x " << mcdaughter0.px() << " y " << mcdaughter0.py() << " z " << mcdaughter0.pz() << endl;
+                }
+                if (mctrack.has_mothers()) {
+                    //cout << "photon has mother " << endl;
+                    int mother = mctrack.mothersIds()[0];
+                    //int mother1 = mcphoton.mothersIds()[1];
+                    auto mcmother0 = groupedMCTracks.rawIteratorAt(mother);
+                    //auto mcmother1 = mcparticles.iteratorAt(mother1);
+                    //cout << "mcdaughter0 dpg " << mcmother0.pdgCode() << " index " << mcmother0.index() << " momentum " << mcmother0.pt() << " x " << mcmother0.px() << " y " << mcmother0.py() << " z " << mcmother0.pz() << endl;
+                    //cout << "mcdaughter1 dpg " << mcmother1.pdgCode() << " index " << mcmother1.index() << " momentum " << mcmother1.pt() << " x " << mcmother1.px() << " y " << mcmother1.py() << " z " << mcmother1.pz() << endl;
+
+                }
+            }
+
             // NOTE: Signals are checked here mostly based on the skimmed MC stack, so depending on the requested signal, the stack could be incomplete.
             // NOTE: However, the working model is that the decisions on MC signals are precomputed during skimming and are stored in the mcReducedFlags member.
             // TODO:  Use the mcReducedFlags to select signals
@@ -1753,10 +1952,13 @@ struct AnalysisDileptonPhoton {
     // Preslice<ReducedMCTracks> perReducedMcEvent = aod::reducedtrackMC::reducedMCeventId;
     //?? I think I have to change that
     PresliceUnsorted<ReducedMCTracks> perReducedMcEvent = aod::reducedtrackMC::reducedMCeventId;
-    Preslice<MyV0Photons> perCollision = aod::v0photonkf::emreducedeventId;
+    Preslice<MyV0Photons> perCollision = aod::v0photonkf::emreducedeventId; //
     void processDielectronPhotonSkimmed(soa::Filtered<MyEventsVtxCovSelected>::iterator const& event, MyBarrelTracksSelectedWithCov const& tracks, MyV0Photons const& v0photons, soa::Filtered<MyPairCandidatesSelected> const& dileptons, ReducedMCEvents const& eventsMC, ReducedMCTracks const& tracksMC,  aod::EMReducedMCEvents const& photonsMC, MyMCV0Legs const& v0legs, aod::EMMCParticles const& mcparticles) //aod::EMMCParticles const& mcparticles,
     {
-        runDileptonPhoton<VarManager::kChicToJpsiEEPhoton, gkEventFillMapWithCov, gkMCEventFillMap, gkTrackFillMapWithCov>(event, v0photons, dileptons, eventsMC, photonsMC,  tracks, tracksMC, v0legs, mcparticles); //mcparticles,
+        //auto groupedMCTracks = tracksMC.sliceBy(perReducedMcEvent, event.reducedMCevent().globalIndex());
+        //groupedMCTracks.bindInternalIndicesTo(&tracksMC);
+        //runMCGen(groupedMCTracks);
+        runDileptonPhoton<VarManager::kChicToJpsiEEPhoton, gkEventFillMapWithCov, gkMCEventFillMap, gkTrackFillMapWithCov>(event,  v0photons, perCollision, dileptons, eventsMC, photonsMC, tracks, tracksMC, v0legs, mcparticles); //mcparticles,
         auto groupedMCTracks = tracksMC.sliceBy(perReducedMcEvent, event.reducedMCevent().globalIndex());
         groupedMCTracks.bindInternalIndicesTo(&tracksMC);
         runMCGen(groupedMCTracks);
