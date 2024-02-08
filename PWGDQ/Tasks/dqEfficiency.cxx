@@ -1415,7 +1415,6 @@ struct AnalysisDileptonPhoton {
                 //}
             }
         }
-        cout << "event number " << event.globalIndex() << endl;
 
         auto photons_coll = v0photons.sliceBy(perCollision, event.globalIndex());
         //FillPhoton histograms
