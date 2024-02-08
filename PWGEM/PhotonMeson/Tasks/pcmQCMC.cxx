@@ -146,17 +146,17 @@ struct PCMQCMC {
     for (auto& collision : collisions) {
       reinterpret_cast<TH1F*>(fMainList->FindObject("Event")->FindObject("hZvtx_before"))->Fill(collision.posZ());
       reinterpret_cast<TH1F*>(fMainList->FindObject("Event")->FindObject("hCollisionCounter"))->Fill(1.0);
-      if (!collision.sel8()) {
-        continue;
-      }
+      //if (!collision.sel8()) {
+      //  continue;
+      //}
       reinterpret_cast<TH1F*>(fMainList->FindObject("Event")->FindObject("hCollisionCounter"))->Fill(2.0);
 
-      if (collision.numContrib() < 0.5) {
-        continue;
-      }
+      //if (collision.numContrib() < 0.5) {
+      //  continue;
+      //}
       reinterpret_cast<TH1F*>(fMainList->FindObject("Event")->FindObject("hCollisionCounter"))->Fill(3.0);
 
-      if (abs(collision.posZ()) > 10.0) {
+      if (abs(collision.posZ()) > 30.0) {
         continue;
       }
       reinterpret_cast<TH1F*>(fMainList->FindObject("Event")->FindObject("hCollisionCounter"))->Fill(4.0);
@@ -255,17 +255,17 @@ struct PCMQCMC {
 
       reinterpret_cast<TH1F*>(fMainList->FindObject("Generated")->FindObject("hCollisionCounter"))->Fill(1.0);
       reinterpret_cast<TH1F*>(fMainList->FindObject("Generated")->FindObject("hZvtx_before"))->Fill(mccollision.posZ());
-      if (!collision.sel8()) {
-        continue;
-      }
+      //if (!collision.sel8()) {
+      //  continue;
+      //}
       reinterpret_cast<TH1F*>(fMainList->FindObject("Generated")->FindObject("hCollisionCounter"))->Fill(2.0);
 
-      if (collision.numContrib() < 0.5) {
-        continue;
-      }
+      //if (collision.numContrib() < 0.5) {
+      //  continue;
+      //}
       reinterpret_cast<TH1F*>(fMainList->FindObject("Generated")->FindObject("hCollisionCounter"))->Fill(3.0);
 
-      if (abs(collision.posZ()) > 10.0) {
+      if (abs(collision.posZ()) > 30.0) {
         continue;
       }
       reinterpret_cast<TH1F*>(fMainList->FindObject("Generated")->FindObject("hCollisionCounter"))->Fill(4.0);

@@ -39,6 +39,9 @@
 #include "TGeoGlobalMagField.h"
 #include "DetectorsBase/Propagator.h"
 #include "DetectorsBase/GeometryManager.h"
+#include "Common/Core/RecoDecay.h"
+#include "PWGEM/PhotonMeson/DataModel/gammaTables.h"
+#include "PWGEM/PhotonMeson/Core/V0PhotonCut.h"
 
 using std::cout;
 using std::endl;
@@ -107,6 +110,11 @@ using MyMuonTracksWithCov = soa::Join<aod::ReducedMuons, aod::ReducedMuonsExtra,
 using MyMuonTracksSelectedWithCov = soa::Join<aod::ReducedMuons, aod::ReducedMuonsExtra, aod::ReducedMuonsCov, aod::MuonTrackCuts>;
 using MyMuonTracksSelectedWithColl = soa::Join<aod::ReducedMuons, aod::ReducedMuonsExtra, aod::ReducedMuonsInfo, aod::MuonTrackCuts>;
 using MyMftTracks = soa::Join<aod::ReducedMFTTracks, aod::ReducedMFTTracksExtra>;
+
+using MyCollisions = soa::Join<aod::EMReducedEvents, aod::EMReducedEventsMult, aod::EMReducedEventsCent, aod::EMReducedEventsNgPCM, aod::EMReducedEventsNgPHOS, aod::EMReducedEventsNgEMC>;
+using MyCollision = MyCollisions::iterator;
+using MyV0Photons = soa::Join<aod::V0PhotonsKF, aod::V0Recalculation, aod::V0KFEMReducedEventIds>;
+using MyV0Photon = MyV0Photons::iterator;
 
 // bit maps used for the Fill functions of the VarManager
 constexpr static uint32_t gkEventFillMap = VarManager::ObjTypes::ReducedEvent | VarManager::ObjTypes::ReducedEventExtended;
@@ -1521,6 +1529,139 @@ struct AnalysisDileptonHadron {
   PROCESS_SWITCH(AnalysisDileptonHadron, processDummy, "Dummy function", false);
 };
 
+struct AnalysisDileptonPhoton {
+    // This task combines Dilepton with photons
+    OutputObj<THashList> fOutputList{"output"};
+
+    Configurable<string> fConfigPhotonCuts{"cfgPhotonCuts", "qc,nocut", "Comma separated list of photon cuts"}; //qc,nocut
+    Configurable<std::string> fConfigAddDileptonPhotonHistogram{"cfgAddDileptonPhotonHistogram", "", "Comma separated list of histograms"};
+    Configurable<float> fConfigDileptonLowMass{"cfgDileptonLowMass", 0., "Low mass cut for the dileptons used in analysis"};
+    Configurable<float> fConfigDileptonHighMass{"cfgDileptonHighMass", 5., "High mass cut for the dileptons used in analysis"};
+    Configurable<bool> fConfigDetectorCut{"cfgDetectorCut", true, "Considering eta and rapaditity cut of the ALICE detector"};
+
+
+    Filter eventFilter = aod::dqanalysisflags::isEventSelected == 1;
+    Filter dileptonFilter = aod::reducedpair::mass > fConfigDileptonLowMass.value&& aod::reducedpair::mass < fConfigDileptonHighMass.value&& aod::reducedpair::sign == 0;
+
+    constexpr static uint32_t fgDileptonFillMap = VarManager::ObjTypes::ReducedTrack | VarManager::ObjTypes::Pair; // fill map
+
+    // use two values array to avoid mixing up the quantities
+    float* fValuesDilepton;
+    float* fValuesPhotons;
+    HistogramManager* fHistMan;
+    //Do I need this??
+    int fNPhotonCutBit;
+
+    void init(o2::framework::InitContext& context)
+    {
+        fValuesDilepton = new float[VarManager::kNVars];
+        fValuesPhotons = new float[VarManager::kNVars];
+        VarManager::SetDefaultVarNames();
+        fHistMan = new HistogramManager("analysisHistos", "aa", VarManager::kNVars);
+        fHistMan->SetUseDefaultVariableNames(kTRUE);
+        fHistMan->SetDefaultVarNames(VarManager::fgVariableNames, VarManager::fgVariableUnits);
+        //definitions of histograms
+        if (context.mOptions.get<bool>("processSkimmed")) {
+            DefineHistograms(fHistMan, "DileptonsSelected;DileptonPhotonInvMass", fConfigAddDileptonPhotonHistogram); // define all histograms //DileptonPhotonCorrelation
+            if (fConfigDetectorCut) {
+                DefineHistograms(fHistMan, "DileptonsSelected_cut;DileptonPhotonInvMass_cut", fConfigAddDileptonPhotonHistogram);
+            }
+        }
+        VarManager::SetUseVars(fHistMan->GetUsedVars());
+        fOutputList.setObject(fHistMan->GetMainHistogramList());
+        TString configCutNamesStr = fConfigPhotonCuts.value;
+        if (!configCutNamesStr.IsNull()) {
+            std::unique_ptr<TObjArray> objArray(configCutNamesStr.Tokenize(","));
+            //Do I need this because I do not use it??
+            fNPhotonCutBit = objArray->GetEntries() - 1;
+        } else {
+            fNPhotonCutBit = 0;
+        }
+
+    }
+
+    // Template function to run pair - hadron combinations
+    template <int TCandidateType, uint32_t TEventFillMap, uint32_t TTrackFillMap, typename TEvent, typename TTracks, typename TPhotons, typename TPreslice>
+    void runDileptonPhoton(TEvent const& event, TPhotons const& v0photons, soa::Filtered<MyPairCandidatesSelected> const& dileptons, TPreslice const& perCollision, TTracks const& tracks)
+    {
+        VarManager::ResetValues(0, VarManager::kNVars, fValuesPhotons);
+        VarManager::ResetValues(0, VarManager::kNVars, fValuesDilepton);
+        VarManager::FillEvent<TEventFillMap>(event, fValuesPhotons);
+        VarManager::FillEvent<TEventFillMap>(event, fValuesDilepton);
+        // Set the global index offset to find the proper lepton
+        // TO DO: remove it once the issue with lepton index is solved
+        int indexOffset = -999;
+        std::vector<int> trackGlobalIndexes;
+
+
+        // loop once over dileptons for QA purposes
+        for (auto dilepton : dileptons) {
+            VarManager::FillTrack<fgDileptonFillMap>(dilepton, fValuesDilepton);
+            fHistMan->FillHistClass("DileptonsSelected", fValuesDilepton);
+
+            // get the index of the electron legs
+            int indexLepton1 = dilepton.index0Id();
+            int indexLepton2 = dilepton.index1Id();
+
+            trackGlobalIndexes.clear();
+            // get full track info of tracks based on the index
+            std::cout << indexLepton1 - indexOffset << std::endl;
+            std::cout << indexLepton2 - indexOffset << std::endl;
+
+            // get full track info of tracks based on the index
+            auto lepton1 = tracks.iteratorAt(indexLepton1 - indexOffset);
+            auto lepton2 = tracks.iteratorAt(indexLepton2 - indexOffset);
+
+            if (fConfigDetectorCut) {
+                if (abs(lepton1.eta()) < 0.9 and abs(lepton2.eta()) < 0.9) {
+                    if (abs(fValuesDilepton[87]) <0.9) {
+                        fHistMan->FillHistClass("DileptonsSelected_cut", fValuesDilepton);
+                    }
+                }
+            }
+
+            // Check that the dilepton has zero charge
+            if (dilepton.sign() != 0) {
+                continue;
+            }
+
+            // Check that the leptons are opposite sign
+            if (lepton1.sign() * lepton2.sign() > 0) {
+                continue;
+            }
+
+            auto photons_coll = v0photons.sliceBy(perCollision, event.globalIndex());
+            for (auto& photon : photons_coll) {
+                if (event.globalIndex() == photon.collisionId()) {
+                    VarManager::FillDileptonPhoton(dilepton, photon, fValuesPhotons);
+                    fHistMan->FillHistClass("DileptonPhotonInvMass", fValuesPhotons);
+                    if (fConfigDetectorCut) {
+                        if (abs(lepton1.eta()) < 0.9 and abs(lepton2.eta()) < 0.9 and abs(photon.eta()) <0.9) {
+                            if (abs(fValuesPhotons[87]) < 0.9) {
+                                fHistMan->FillHistClass("DileptonPhotonInvMass_cut", fValuesPhotons);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Preslice<MyV0Photons> perCollision = aod::v0photonkf::emreducedeventId;
+    void processSkimmed(soa::Filtered<MyEventsVtxCovSelected>::iterator const& event, MyV0Photons const& v0photons,  soa::Filtered<MyPairCandidatesSelected> const& dileptons, MyBarrelTracksSelectedWithCov const& tracks) //MyBarrelTracksSelectedWithCov const& tracks,
+    {
+        runDileptonPhoton<VarManager::kTripleCandidateToEEPhoton, gkEventFillMapWithCov, gkTrackFillMapWithCov>(event, v0photons, dileptons, perCollision, tracks);
+    }
+
+    void processDummy(MyEvents&)
+    {
+        // do nothing
+    }
+    PROCESS_SWITCH(AnalysisDileptonPhoton, processSkimmed, "Run dilepton-photon pairing, using skimmed data", false);
+    PROCESS_SWITCH(AnalysisDileptonPhoton, processDummy, "Dummy function", false);
+
+};
+
 WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
 {
   return WorkflowSpec{
@@ -1531,7 +1672,8 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
     adaptAnalysisTask<AnalysisEventMixing>(cfgc),
     adaptAnalysisTask<AnalysisSameEventPairing>(cfgc),
     adaptAnalysisTask<AnalysisFwdTrackPid>(cfgc),
-    adaptAnalysisTask<AnalysisDileptonHadron>(cfgc)};
+    adaptAnalysisTask<AnalysisDileptonHadron>(cfgc),
+    adaptAnalysisTask<AnalysisDileptonPhoton>(cfgc)};
 }
 
 void DefineHistograms(HistogramManager* histMan, TString histClasses, Configurable<std::string> configVar)
@@ -1588,6 +1730,16 @@ void DefineHistograms(HistogramManager* histMan, TString histClasses, Configurab
 
     if (classStr.Contains("DileptonHadronCorrelation")) {
       dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "dilepton-hadron-array-correlation");
+    }
+
+    if (classStr.Contains("DileptonPhotonInvMass")) {
+      dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "dilepton-photon-mass");
+    }
+    if (classStr.Contains("DileptonPhotonInvMass_cut")) {
+      dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "dilepton-photon-mass");
+    }
+    if (classStr.Contains("DileptonsSelected_cut")) {
+      dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "pair", "barrel");
     }
   } // end loop over histogram classes
 }

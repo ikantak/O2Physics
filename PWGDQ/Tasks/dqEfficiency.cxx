@@ -34,6 +34,10 @@
 #include "CCDB/BasicCCDBManager.h"
 #include "DataFormatsParameters/GRPMagField.h"
 #include "DetectorsBase/GeometryManager.h"
+#include "Common/Core/RecoDecay.h"
+#include "PWGEM/PhotonMeson/DataModel/gammaTables.h"
+#include "PWGEM/PhotonMeson/Core/V0PhotonCut.h"
+#include "PWGEM/PhotonMeson/Utils/MCUtilities.h"
 
 using std::cout;
 using std::endl;
@@ -76,6 +80,15 @@ using MyMuonTracks = soa::Join<aod::ReducedMuons, aod::ReducedMuonsExtra, aod::R
 using MyMuonTracksSelected = soa::Join<aod::ReducedMuons, aod::ReducedMuonsExtra, aod::MuonTrackCuts, aod::ReducedMuonsLabels>;
 using MyMuonTracksWithCov = soa::Join<aod::ReducedMuons, aod::ReducedMuonsExtra, aod::ReducedMuonsCov, aod::ReducedMuonsLabels>;
 using MyMuonTracksSelectedWithCov = soa::Join<aod::ReducedMuons, aod::ReducedMuonsExtra, aod::ReducedMuonsCov, aod::MuonTrackCuts, aod::ReducedMuonsLabels>;
+
+using MyPairCandidatesSelected = soa::Join<aod::Dileptons, aod::DileptonsExtra>;
+
+using MyEventsEM = soa::Join<aod::EMReducedEvents, aod::EMReducedEventsMult, aod::EMReducedEventsCent, aod::EMReducedEventsNgPCM, aod::EMReducedEventsNgPHOS, aod::EMReducedEventsNgEMC>;
+using MyEventEM = MyEventsEM::iterator;
+using MyV0Photons = soa::Join<aod::V0PhotonsKF, aod::V0Recalculation, aod::V0KFEMReducedEventIds>;
+using MyV0Photon = MyV0Photons::iterator;
+using MyFilteredCollisions = soa::Filtered<MyEventsEM>; // this goes to mixed event.
+using MyMCV0Legs = soa::Join<aod::V0Legs, aod::V0LegMCLabels>;
 
 constexpr static uint32_t gkEventFillMap = VarManager::ObjTypes::ReducedEvent | VarManager::ObjTypes::ReducedEventExtended;
 constexpr static uint32_t gkMCEventFillMap = VarManager::ObjTypes::ReducedEventMC;
@@ -1230,6 +1243,478 @@ struct AnalysisDileptonTrack {
   PROCESS_SWITCH(AnalysisDileptonTrack, processDummy, "Dummy function", false);
 };
 
+struct AnalysisDileptonPhoton {
+    Produces<aod::DileptonPhotonCandidates> dileptonPhotonCandidatesList; //?? Here I need something else
+    OutputObj<THashList> fOutputList{"output"};
+    Configurable<string> fConfigTrackCuts{"cfgLeptonCuts", "", "Comma separated list of barrel track cuts"};
+    Configurable<string> fConfigPhotonCuts{"cfgPhotonCuts", "qc,nocut", "Comma separated list of photon cuts"}; //qc,nocut
+    Configurable<float> fConfigDileptonLowMass{"cfgDileptonLowMass", 0.0, "Low mass cut for the dileptons used in analysis"};
+    Configurable<float> fConfigDileptonHighMass{"cfgDileptonHighMass", 5.0, "High mass cut for the dileptons used in analysis"};
+
+    Configurable<bool> fConfigFillCandidateTable{"cfgFillCandidateTable", false, "Produce a single flat tables with all relevant information dilepton-track candidates"};
+    Configurable<std::string> fConfigMCRecSignals{"cfgBarrelMCRecSignals", "", "Comma separated list of MC signals (reconstructed)"};
+    Configurable<std::string> fConfigMCGenSignals{"cfgBarrelMCGenSignals", "", "Comma separated list of MC signals (generated)"};
+    Configurable<bool> fConfigMCGenTrackCuts{"cfgBarrelMCGenCuts", true, "Produce additional plots with eta and rapaditity cut corresponding to the ALICE detector"};
+
+
+    Filter eventFilter = aod::dqanalysisflags::isEventSelected == 1;
+    Filter dileptonFilter = aod::reducedpair::mass > fConfigDileptonLowMass.value&& aod::reducedpair::mass < fConfigDileptonHighMass.value&& aod::reducedpair::sign == 0;
+
+    constexpr static uint32_t fgDileptonFillMap = VarManager::ObjTypes::ReducedTrack | VarManager::ObjTypes::Pair; // fill map
+
+    // use two values array to avoid mixing up the quantities
+    float* fValuesDilepton;
+    float* fValuesPhoton;
+    float* fValuesDileptonPhoton;
+    HistogramManager* fHistMan;
+
+    std::vector<TString> fRecMCSignalsNames;
+    std::vector<MCSignal> fRecMCSignals;
+    std::vector<MCSignal> fGenMCSignals;
+
+    int fNPhotonCutBit;
+
+    void init(o2::framework::InitContext& context)
+    {
+        TString sigNamesStr = fConfigMCRecSignals.value;
+        std::unique_ptr<TObjArray> objRecSigArray(sigNamesStr.Tokenize(","));
+        TString histNames;
+
+        fValuesDilepton = new float[VarManager::kNVars];
+        fValuesPhoton = new float[VarManager::kNVars];
+        VarManager::SetDefaultVarNames();
+        fHistMan = new HistogramManager("analysisHistos", "aa", VarManager::kNVars);
+        fHistMan->SetUseDefaultVariableNames(kTRUE);
+        fHistMan->SetDefaultVarNames(VarManager::fgVariableNames, VarManager::fgVariableUnits);
+
+        // TODO: Create separate histogram directories for each selection used in the creation of the dileptons
+        // TODO: Implement possibly multiple selections for the associated track ?
+        if (context.mOptions.get<bool>("processDielectronPhotonSkimmed")) {
+            // DefineHistograms(fHistMan, "DileptonsSelected;DileptonTrackInvMass;DileptonsSelected_matchedMC;DileptonTrackInvMass_matchedMC;"); // define all histograms
+            // VarManager::SetUseVars(fHistMan->GetUsedVars());
+            // fOutputList.setObject(fHistMan->GetMainHistogramList());
+
+            histNames += "DileptonsSelected;DileptonPhotonInvMass;";
+            if (fConfigMCGenTrackCuts) {
+                histNames += "DileptonsSelected_cut;DileptonPhotonInvMass_cut;";
+            }
+
+            if (!sigNamesStr.IsNull()) {
+                for (int isig = 0; isig < objRecSigArray->GetEntries(); ++isig) {
+                    MCSignal* sig = o2::aod::dqmcsignals::GetMCSignal(objRecSigArray->At(isig)->GetName());
+                    if (sig) {
+                        if (sig->GetNProngs() == 1) {
+                            fRecMCSignals.push_back(*sig);
+                            TString histName = Form("Selected_matchedMC_%s", sig->GetName());
+                            TString histName2 = Form("LeptonSelected_matchedMC_%s", sig->GetName());
+                            histNames += Form("%s;", histName.Data());
+                            histNames += Form("%s;", histName2.Data());
+                            if (fConfigMCGenTrackCuts) {
+                                TString histName3 = Form("Selected_cut_matchedMC_%s", sig->GetName());
+                                histNames += Form("%s;", histName3.Data());
+                            }
+                            fRecMCSignalsNames.push_back(sig->GetName());
+                        }
+                        if (sig->GetNProngs() == 2) {
+                            fRecMCSignals.push_back(*sig);
+                            TString histName = Form("DileptonsSelected_matchedMC_%s", sig->GetName());
+                            histNames += Form("%s;", histName.Data());
+                            if (fConfigMCGenTrackCuts) {
+                                TString histName1 = Form("DileptonsSelected_cut_matchedMC_%s", sig->GetName());
+                                histNames += Form("%s;", histName1.Data());
+                            }
+                            fRecMCSignalsNames.push_back(sig->GetName());
+
+                        }
+                        if (sig->GetNProngs() == 3) {
+                            fRecMCSignals.push_back(*sig);
+                            TString histName = Form("DileptonPhotonInvMass_matchedMC_%s", sig->GetName());
+                            histNames += Form("%s;", histName.Data());
+                            if (fConfigMCGenTrackCuts) {
+                                TString histName1 = Form("DileptonPhotonInvMass_cut_matchedMC_%s", sig->GetName());
+                                histNames += Form("%s;", histName1.Data());
+                            }
+                            fRecMCSignalsNames.push_back(sig->GetName());
+                        }
+                    }
+                }
+            }
+
+            // Add histogram classes for each specified MCsignal at the generator level
+            // TODO: create a std::vector of hist classes to be used at Fill time, to avoid using Form in the process function
+            TString sigGenNamesStr = fConfigMCGenSignals.value;
+            std::unique_ptr<TObjArray> objGenSigArray(sigGenNamesStr.Tokenize(","));
+            for (int isig = 0; isig < objGenSigArray->GetEntries(); isig++) {
+                MCSignal* sig = o2::aod::dqmcsignals::GetMCSignal(objGenSigArray->At(isig)->GetName());
+                if (sig) {
+                    if (sig->GetNProngs() == 1) { // NOTE: 1-prong signals required
+                        fGenMCSignals.push_back(*sig);
+                        histNames += Form("MCTruthGen_%s;", sig->GetName());// TODO: Add these names to a std::vector to avoid using Form in the process function
+                        if (fConfigMCGenTrackCuts) {
+                            histNames += Form("MCTruthGen_cut_%s;", sig->GetName());
+                        }
+                    } else if (sig->GetNProngs() == 2) {                   // NOTE: 2-prong signals required
+                        fGenMCSignals.push_back(*sig);
+                        histNames += Form("MCTruthGenPair_%s;", sig->GetName());
+                        if (fConfigMCGenTrackCuts) {
+                            histNames += Form("MCTruthGenPair_cut_%s;", sig->GetName());
+                        }
+                    } else if (sig->GetNProngs() == 3) {
+                        fGenMCSignals.push_back(*sig);
+                        histNames += Form("MCTruthGenTriple_%s;", sig->GetName());
+                        if (fConfigMCGenTrackCuts) {
+                            histNames += Form("MCTruthGenTriple_cut_%s;", sig->GetName());
+                        }
+                    }
+                }
+            }
+
+            DefineHistograms(fHistMan, histNames.Data()); // define all histograms
+            VarManager::SetUseVars(fHistMan->GetUsedVars());
+            fOutputList.setObject(fHistMan->GetMainHistogramList());
+        }
+
+        TString configCutNamesStr = fConfigPhotonCuts.value;
+        if (!configCutNamesStr.IsNull()) {
+            std::unique_ptr<TObjArray> objArray(configCutNamesStr.Tokenize(","));
+            fNPhotonCutBit = objArray->GetEntries();
+        } else {
+            fNPhotonCutBit = 0;
+        }
+    }
+
+    // Template function to run pair - track combinations
+    template <int TCandidateType, uint32_t TEventFillMap, uint32_t TEventMCFillMap, uint32_t TTrackFillMap, typename TEvent, typename TPhotons, typename TEventsMC, typename TPhotonsMC, typename TTrack, typename TTracksMC, typename TV0Legs, typename TMCEMParticles, typename TPreslice> //,
+    void runDileptonPhoton(TEvent const& event, TPhotons const& v0photons, TPreslice const& perCollision,  soa::Filtered<MyPairCandidatesSelected> const& dileptons, TEventsMC const& eventsMC, TPhotonsMC const& photonsMC,  TTrack const& tracks, TTracksMC const& groupedMCtracks, TV0Legs const& v0legs, TMCEMParticles mcparticles) //TMCEMParticles mcparticles,
+    {
+        VarManager::ResetValues(0, VarManager::kNVars, fValuesPhoton);
+        VarManager::ResetValues(0, VarManager::kNVars, fValuesDilepton);
+        VarManager::FillEvent<TEventFillMap>(event, fValuesPhoton);
+        VarManager::FillEvent<TEventFillMap>(event, fValuesDilepton);
+        VarManager::ResetValues(0, VarManager::kNVars, fValuesDileptonPhoton);
+        VarManager::FillEvent<TEventFillMap>(event, fValuesDileptonPhoton);
+        // Set the global index offset to find the proper lepton
+        // TO DO: remove it once the issue with lepton index is solved
+        int indexOffset = -999;
+        std::vector<int> trackGlobalIndexes;
+        if (dileptons.size() > 0) {
+            for (auto track : tracks) {
+                trackGlobalIndexes.push_back(track.globalIndex());
+                //uint32_t mcDecision_electron = 0;
+                //int isig_electron = 0;
+                //for (auto sig = fRecMCSignals.begin(); sig != fRecMCSignals.end(); sig++, isig_electron++) {
+                //    if ((*sig).CheckSignal(false, track.reducedMCTrack())) {
+                //        mcDecision_electron |= (uint32_t(1) << isig_electron);
+                //    }
+                //} // end loop over MC signals
+                //for (unsigned int isig_electron = 0; isig_electron < fRecMCSignals.size(); isig_electron++) {
+                //    if (mcDecision_electron & (uint32_t(1) << isig_electron)) {
+                //        VarManager::FillTrack<TTrackFillMap>(track, fValuesTrack);
+                //        fHistMan->FillHistClass(Form("LeptonSelected_matchedMC_%s", fRecMCSignalsNames[isig_electron].Data()), fValuesTrack);
+                //    }
+                //}
+            }
+        }
+        cout << "event number " << event.globalIndex() << endl;
+
+        auto photons_coll = v0photons.sliceBy(perCollision, event.globalIndex());
+        //FillPhoton histograms
+        for (auto& photon : photons_coll) {
+            if (event.globalIndex() == photon.collisionId()) {
+                // check that photon candidates are really photons
+                auto pos = photon.template posTrack_as<MyMCV0Legs>();
+                auto ele = photon.template negTrack_as<MyMCV0Legs>();
+                auto posmc = pos.template emmcparticle_as<aod::EMMCParticles>();
+                auto elemc = ele.template emmcparticle_as<aod::EMMCParticles>();
+                int photonid = FindCommonMotherFrom2Prongs(posmc, elemc, -11, 11, 22, mcparticles);
+                if (photonid < 0) {
+                    continue;
+                }
+                auto mcphoton = mcparticles.iteratorAt(photonid);
+                for (auto mctrack : groupedMCtracks) {
+                    if ((mcphoton.pt() == mctrack.pt()) && (mctrack.pdgCode() == 22)){
+                        uint32_t mcDecision_photon = 0;
+                        uint32_t mcDecision_photon2 = 0;
+                        int isig_photon = 0;
+                        if (mctrack.has_mothers()) {
+                            for (auto sig = fRecMCSignals.begin(); sig != fRecMCSignals.end(); sig++, isig_photon++) {
+                                if ((*sig).CheckSignal(false, mctrack)) {
+                                    mcDecision_photon |= (uint32_t(1) << isig_photon);
+                                    if (fConfigMCGenTrackCuts) {
+                                        if (abs(mctrack.eta()) <= 0.9) {
+                                            mcDecision_photon2 |= (uint32_t(1) << isig_photon);
+                                        }
+                                    }
+                                }
+                            } // end loop over MC signals
+                            for (unsigned int isig_photon = 0; isig_photon < fRecMCSignals.size(); isig_photon++) {
+                                if (mcDecision_photon & (uint32_t(1) << isig_photon)) {
+                                    VarManager::FillPhoton<TTrackFillMap>(mctrack, fValuesPhoton);
+                                    fHistMan->FillHistClass(Form("Selected_matchedMC_%s", fRecMCSignalsNames[isig_photon].Data()),fValuesPhoton);
+                                }
+                                if (mcDecision_photon2 & (uint32_t(1) << isig_photon)) {
+                                    VarManager::FillPhoton<TTrackFillMap>(mctrack, fValuesPhoton);
+                                    fHistMan->FillHistClass(Form("Selected_cut_matchedMC_%s", fRecMCSignalsNames[isig_photon].Data()),fValuesPhoton);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for (auto dilepton : dileptons) {
+            int indexLepton1 = dilepton.index0Id();
+            int indexLepton2 = dilepton.index1Id();
+
+            if (indexOffset == -999) {
+                indexOffset = trackGlobalIndexes.at(0);
+            }
+            trackGlobalIndexes.clear();
+
+            auto lepton1 = tracks.iteratorAt(indexLepton1 - indexOffset);
+            auto lepton2 = tracks.iteratorAt(indexLepton2 - indexOffset);
+
+            // Check that the dilepton has zero charge
+            if (dilepton.sign() != 0) {
+                continue;
+            }
+
+            // Check that the leptons are opposite sign
+            if (lepton1.sign() * lepton2.sign() > 0) {
+                continue;
+            }
+
+            VarManager::FillTrack<fgDileptonFillMap>(dilepton, fValuesDilepton);
+            fHistMan->FillHistClass("DileptonsSelected", fValuesDilepton);
+            if (fConfigMCGenTrackCuts) {
+                if (abs(lepton1.eta()) < 0.9 and abs(lepton2.eta()) < 0.9) {
+                    VarManager::FillTrack<fgDileptonFillMap>(dilepton, fValuesDilepton);
+                    if (abs(fValuesDilepton[VarManager::kRap]) < 0.9) {//
+                        fHistMan->FillHistClass("DileptonsSelected_cut", fValuesDilepton);
+                    }
+                }
+            }
+            auto lepton1MC = lepton1.reducedMCTrack();
+            auto lepton2MC = lepton2.reducedMCTrack();
+            // run MC matching for this pair
+            uint32_t mcDecision = 0;
+            uint32_t mcDecision2 = 0;
+            int isig = 0;
+            bool triplefilled = false;
+            for (auto sig = fRecMCSignals.begin(); sig != fRecMCSignals.end(); sig++, isig++) {
+                if constexpr (TTrackFillMap & VarManager::ObjTypes::ReducedTrack ) { // for skimmed DQ model
+                    if ((*sig).CheckSignal(false, lepton1MC, lepton2MC)) {
+                        mcDecision |= (uint32_t(1) << isig);
+                        if (fConfigMCGenTrackCuts) {
+                            if (abs(lepton1.eta()) < 0.9 and abs(lepton2.eta()) < 0.9) {
+                                mcDecision2 |= (uint32_t(1) << isig);
+                            }
+                        }
+                        // run MC matching for the triple eephoton
+                        if (!triplefilled) {
+                            for (auto &photon: photons_coll) {
+                                if (event.globalIndex() == photon.collisionId()) {
+                                    auto pos = photon.template posTrack_as<MyMCV0Legs>();
+                                    auto ele = photon.template negTrack_as<MyMCV0Legs>();
+                                    auto posmc = pos.template emmcparticle_as<aod::EMMCParticles>();
+                                    auto elemc = ele.template emmcparticle_as<aod::EMMCParticles>();
+                                    int photonid = FindCommonMotherFrom2Prongs(posmc, elemc, -11, 11, 22, mcparticles);
+                                    if (photonid < 0) {
+                                        continue;
+                                    }
+                                    auto mcphoton = mcparticles.iteratorAt(photonid);
+                                    for (auto trackmc: groupedMCtracks) {
+                                        if ((mcphoton.pt() == trackmc.pt()) && (trackmc.pdgCode() == 22)) {
+                                            uint32_t mcDecision_triple = 0;
+                                            uint32_t mcDecision_triple2 = 0;
+                                            int isig_triple = 0;
+                                            if (trackmc.has_mothers()) {
+                                                for (auto sig_triple = fRecMCSignals.begin(); sig_triple != fRecMCSignals.end(); sig_triple++, isig_triple++) {
+                                                    if constexpr(TTrackFillMap & VarManager::ObjTypes::ReducedTrack)
+                                                    {
+                                                        //lepton1MC pdgCode 11 -> electron, lepton2MC pdgCode -11 -> positron
+                                                        if ((*sig_triple).CheckSignal(false, lepton2MC, lepton1MC, trackmc)) {
+                                                            mcDecision_triple |= (uint32_t(1) << isig_triple);
+                                                            triplefilled = true;
+                                                            if (fConfigMCGenTrackCuts) {
+                                                                if (abs(lepton1.eta()) < 0.9 and abs(lepton2.eta()) < 0.9 and abs(trackmc.eta()) < 0.9) {
+                                                                    mcDecision_triple2 |= (uint32_t(1) << isig_triple);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                for (unsigned int isig_triple = 0; isig_triple < fRecMCSignals.size(); isig_triple++) {
+                                                    if (mcDecision_triple & (uint32_t(1) << isig_triple)) {
+                                                        VarManager::FillTriple(lepton1MC, lepton2MC, trackmc);
+                                                        fHistMan->FillHistClass(Form("DileptonPhotonInvMass_matchedMC_%s",fRecMCSignalsNames[isig_triple].Data()),VarManager::fgValues);
+                                                    }
+                                                    if (mcDecision_triple2 & (uint32_t(1) << isig_triple)) {
+                                                        VarManager::FillTriple(lepton1MC, lepton2MC, trackmc);
+                                                        if (abs(VarManager::fgValues[VarManager::kRap]) < 0.9) { //VarManager::kRap
+                                                            fHistMan->FillHistClass(Form("DileptonPhotonInvMass_cut_matchedMC_%s", fRecMCSignalsNames[isig_triple].Data()), VarManager::fgValues);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } // end loop over MC signals
+            for (unsigned int isig = 0; isig < fRecMCSignals.size(); isig++) {
+                if (mcDecision & (uint32_t(1) << isig)) {
+                    fHistMan->FillHistClass(Form("DileptonsSelected_matchedMC_%s", fRecMCSignalsNames[isig].Data()), fValuesDilepton);
+                }
+                if (mcDecision2 & (uint32_t(1) << isig)) {
+                    if (abs(fValuesDilepton[VarManager::kRap]) < 0.9) {//VarManager::kRap
+                        fHistMan->FillHistClass(Form("DileptonsSelected_cut_matchedMC_%s", fRecMCSignalsNames[isig].Data()),fValuesDilepton);
+                    }
+                }
+            }
+            for (auto& photon : photons_coll) {
+                if (event.globalIndex() == photon.collisionId()) {
+                    VarManager::FillDileptonPhoton(dilepton, photon, fValuesPhoton);
+                    fHistMan->FillHistClass("DileptonPhotonInvMass", fValuesPhoton);
+                    if (fConfigMCGenTrackCuts) {
+                        if (abs(photon.eta()) < 0.9 and abs(lepton1.eta()) < 0.9 and abs(lepton2.eta()) < 0.9) {
+                            if (abs(fValuesPhoton[VarManager::kRap]) <0.9) { //VarManager::kRap
+                                fHistMan->FillHistClass("DileptonPhotonInvMass_cut", fValuesPhoton);
+                            }
+                        }
+                    }
+                }
+
+                //if (fConfigFillCandidateTable.value) {
+                //    cout << "inside if FillCandidateTable" << endl;
+                //    dileptonPhotonCandidatesList(mcDecision, fValuesPhoton[VarManager::kPairMass], fValuesPhoton[VarManager::kPairPt], fValuesPhoton[VarManager::kPairEta], fValuesPhoton[VarManager::kVertexingTauz], fValuesPhoton[VarManager::kVertexingTauxy], fValuesPhoton[VarManager::kVertexingLz], fValuesPhoton[VarManager::kVertexingLxy]);
+                //    //dileptonList(event, VarManager::fgValues[VarManager::kMass], VarManager::fgValues[VarManager::kPt], VarManager::fgValues[VarManager::kEta], VarManager::fgValues[VarManager::kPhi], lepton1.sign() + lepton2.sign(), dileptonFilterMap, dileptonMcDecision);
+                //    //dileptonExtraList(t1.globalIndex(), t2.globalIndex(), VarManager::fgValues[VarManager::kVertexingTauz], VarManager::fgValues[VarManager::kVertexingLz], VarManager::fgValues[VarManager::kVertexingLxy]);
+                //}
+
+                // }
+            }
+        }
+    }
+
+    template <typename TTracksMC>
+    void runMCGen(TTracksMC& groupedMCTracks)
+    {
+        // loop over mc stack and fill histograms for pure MC truth signals
+        // group all the MC tracks which belong to the MC event corresponding to the current reconstructed event
+        // auto groupedMCTracks = tracksMC.sliceBy(aod::reducedtrackMC::reducedMCeventId, event.reducedMCevent().globalIndex());
+        for (auto& mctrack : groupedMCTracks) {
+            VarManager::FillTrackMC(groupedMCTracks, mctrack);
+
+            // NOTE: Signals are checked here mostly based on the skimmed MC stack, so depending on the requested signal, the stack could be incomplete.
+            // NOTE: However, the working model is that the decisions on MC signals are precomputed during skimming and are stored in the mcReducedFlags member.
+            // TODO:  Use the mcReducedFlags to select signals
+            for (auto& sig : fGenMCSignals) {
+                if (sig.GetNProngs() != 1) { // NOTE: 1-prong signals required
+                    continue;
+                }
+                bool checked = false;
+                if constexpr (soa::is_soa_filtered_v<TTracksMC>) {
+                    auto mctrack_raw = groupedMCTracks.rawIteratorAt(mctrack.globalIndex());
+                    checked = sig.CheckSignal(false, mctrack_raw);
+                } else {
+                    checked = sig.CheckSignal(false, mctrack);
+                }
+                if (checked) {
+                    fHistMan->FillHistClass(Form("MCTruthGen_%s", sig.GetName()), VarManager::fgValues);
+                    if (fConfigMCGenTrackCuts){
+                        if (abs(VarManager::fgValues[VarManager::kMCY]) < 0.9) { //rapidity cut
+                            fHistMan->FillHistClass(Form("MCTruthGen_cut_%s", sig.GetName()), VarManager::fgValues);
+                        }
+                    }
+                }
+            }
+        }
+
+        // loop over mc stack and fill histograms for pure MC truth signals
+        for (auto& sig : fGenMCSignals) {
+            if (sig.GetNProngs() != 2) { // NOTE: 2-prong signals required
+                continue;
+            }
+            for (auto& [t1, t2] : combinations(groupedMCTracks, groupedMCTracks)) {
+                bool checked = false;
+                if constexpr (soa::is_soa_filtered_v<TTracksMC>) {
+                    auto t1_raw = groupedMCTracks.rawIteratorAt(t1.globalIndex());
+                    auto t2_raw = groupedMCTracks.rawIteratorAt(t2.globalIndex());
+                    checked = sig.CheckSignal(false, t1_raw, t2_raw);
+                } else {
+                    checked = sig.CheckSignal(false, t1, t2);
+                }
+                if (checked) {
+                    VarManager::FillPairMC(t1, t2);
+                    fHistMan->FillHistClass(Form("MCTruthGenPair_%s", sig.GetName()), VarManager::fgValues);
+                    if (fConfigMCGenTrackCuts) {
+                        if (abs(t1.eta()) < 0.9 and abs(t2.eta()) < 0.9) { // eta cut
+                            VarManager::FillPairMC(t1, t2);
+                            if (abs(VarManager::fgValues[87]) < 0.9 ) { // rapidity cut
+                                fHistMan->FillHistClass(Form("MCTruthGenPair_cut_%s", sig.GetName()), VarManager::fgValues);
+                            }
+                        }
+                    }
+                }
+            }
+        } // end of true pairing loop
+
+        for (auto& sig : fGenMCSignals) {
+            if (sig.GetNProngs() != 3) { // NOTE: 3-prong signals required
+                continue;
+            }
+            for (auto& [t1, t2, t3] : combinations(groupedMCTracks, groupedMCTracks, groupedMCTracks)) {
+                bool checked = false;
+                if constexpr (soa::is_soa_filtered_v<TTracksMC>) {
+                    auto t1_raw = groupedMCTracks.rawIteratorAt(t1.globalIndex());
+                    auto t2_raw = groupedMCTracks.rawIteratorAt(t2.globalIndex());
+                    auto t3_raw = groupedMCTracks.rawIteratorAt(t3.globalIndex());
+                    //t1 is photon, t2 is e+ and t3 is e-
+                    checked = sig.CheckSignal(false, t2_raw, t3_raw, t1_raw);
+                } else {
+                    checked = sig.CheckSignal(false, t2, t3, t1);
+                }
+                if (checked) {
+                    VarManager::FillTripleMC(t2,t3,t1);
+                    fHistMan->FillHistClass(Form("MCTruthGenTriple_%s", sig.GetName()), VarManager::fgValues);
+                    if (fConfigMCGenTrackCuts) {
+                        if (abs(t1.eta()) < 0.9 and abs(t2.eta()) < 0.9 and abs(t3.eta()) < 0.9) { // eta cut
+                            VarManager::FillTripleMC(t2, t3, t1);
+                            if (abs(VarManager::fgValues[87])<0.9) { //rapidity cut
+                                fHistMan->FillHistClass(Form("MCTruthGenTriple_cut_%s", sig.GetName()),VarManager::fgValues);
+                            }
+                        }
+                    }
+                }
+            }
+        } // end of true triple loop
+    }   // end runMCGen
+
+
+    PresliceUnsorted<ReducedMCTracks> perReducedMcEvent = aod::reducedtrackMC::reducedMCeventId;
+    Preslice<MyV0Photons> perCollision = aod::v0photonkf::emreducedeventId; //
+    void processDielectronPhotonSkimmed(soa::Filtered<MyEventsVtxCovSelected>::iterator const& event, MyBarrelTracksSelectedWithCov const& tracks, MyV0Photons const& v0photons, soa::Filtered<MyPairCandidatesSelected> const& dileptons, ReducedMCEvents const& eventsMC, ReducedMCTracks const& tracksMC,  aod::EMReducedMCEvents const& photonsMC, MyMCV0Legs const& v0legs, aod::EMMCParticles const& mcparticles) //aod::EMMCParticles const& mcparticles,
+    {
+        runDileptonPhoton<VarManager::kTripleCandidateToEEPhoton, gkEventFillMapWithCov, gkMCEventFillMap, gkTrackFillMapWithCov>(event,  v0photons, perCollision, dileptons, eventsMC, photonsMC, tracks, tracksMC, v0legs, mcparticles); //mcparticles,
+        auto groupedMCTracks = tracksMC.sliceBy(perReducedMcEvent, event.reducedMCevent().globalIndex());
+        groupedMCTracks.bindInternalIndicesTo(&tracksMC);
+        runMCGen(groupedMCTracks);
+    }
+    void processDummy(MyEvents&)
+    {
+        // do nothing
+    }
+
+    PROCESS_SWITCH(AnalysisDileptonPhoton, processDielectronPhotonSkimmed, "Run dielectron-photon pairing, using skimmed data", false);
+    PROCESS_SWITCH(AnalysisDileptonPhoton, processDummy, "Dummy function", false);
+};
+
+
 WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
 {
   return WorkflowSpec{
@@ -1237,7 +1722,8 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
     adaptAnalysisTask<AnalysisTrackSelection>(cfgc),
     adaptAnalysisTask<AnalysisMuonSelection>(cfgc),
     adaptAnalysisTask<AnalysisSameEventPairing>(cfgc),
-    adaptAnalysisTask<AnalysisDileptonTrack>(cfgc)};
+    adaptAnalysisTask<AnalysisDileptonTrack>(cfgc),
+    adaptAnalysisTask<AnalysisDileptonPhoton>(cfgc)};
 }
 
 void DefineHistograms(HistogramManager* histMan, TString histClasses)
@@ -1274,7 +1760,12 @@ void DefineHistograms(HistogramManager* histMan, TString histClasses)
         dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "pair", "dimuon,vertexing-forward");
       }
     }
-
+    if (classStr.Contains("MCTruthGenTriple")) {
+      dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "mctruth_triple");
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt", "MC generator p_{T} distribution", false, 200, 0.0, 20.0, VarManager::kMCPt);
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Eta", "MC generator #eta distribution", false, 500, -5.0, 5.0, VarManager::kMCEta);
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Phi", "MC generator #varphi distribution", false, 500, -6.3, 6.3, VarManager::kMCPhi);
+    }
     if (classStr.Contains("MCTruthGenPair")) {
       dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "mctruth_pair");
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt", "MC generator p_{T} distribution", false, 200, 0.0, 20.0, VarManager::kMCPt);
@@ -1287,6 +1778,24 @@ void DefineHistograms(HistogramManager* histMan, TString histClasses)
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Eta", "MC generator #eta distribution", false, 500, -5.0, 5.0, VarManager::kMCEta);
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Phi", "MC generator #varphi distribution", false, 500, -6.3, 6.3, VarManager::kMCPhi);
     }
+    if (classStr.Contains("MCTruthGenTriple_cut")) {
+      dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "mctruth_triple");
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt", "MC generator p_{T} distribution", false, 200, 0.0, 20.0, VarManager::kPairPt);
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Eta", "MC generator #eta distribution", false, 500, -5.0, 5.0, VarManager::kPairEta);
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Phi", "MC generator #varphi distribution", false, 500, -6.3, 6.3, VarManager::kMCPhi);
+    }
+    if (classStr.Contains("MCTruthGenPair_cut")) {
+      dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "mctruth_pair");
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt", "MC generator p_{T} distribution", false, 200, 0.0, 20.0, VarManager::kPt);
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Eta", "MC generator #eta distribution", false, 500, -5.0, 5.0, VarManager::kEta);
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Phi", "MC generator #varphi distribution", false, 500, -6.3, 6.3, VarManager::kMCPhi);
+    }
+    if (classStr.Contains("MCTruthGen_cut")) {
+      dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "mctruth");
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt", "MC generator p_{T} distribution", false, 200, 0.0, 20.0, VarManager::kPt);
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Eta", "MC generator #eta distribution", false, 500, -5.0, 5.0, VarManager::kMCEta);
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Phi", "MC generator #varphi distribution", false, 500, -6.3, 6.3, VarManager::kMCPhi);
+    }
     if (classStr.Contains("DileptonsSelected")) {
       dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "pair", "barrel,dimuon");
     }
@@ -1295,6 +1804,21 @@ void DefineHistograms(HistogramManager* histMan, TString histClasses)
     }
     if (classStr.Contains("DileptonTrackInvMass")) {
       dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "dilepton-hadron-mass");
+    }
+    if (classStr.Contains("DileptonPhotonInvMass")) {
+      dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "dilepton-photon-mass");
+    }
+    if (classStr.Contains("Selected")) {
+      dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "photon");
+    }
+    if (classStr.Contains("DileptonPhotonInvMass_cut")) {
+      dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "dilepton-photon-mass");
+    }
+    if (classStr.Contains("Selected_cut")) {
+      dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "photon");
+    }
+    if (classStr.Contains("DileptonsSelected_cut")) {
+      dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "pair", "barrel,dimuon");
     }
 
   } // end loop over histogram classes

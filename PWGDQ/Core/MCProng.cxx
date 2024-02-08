@@ -409,6 +409,11 @@ bool MCProng::ComparePDG(int pdg, int prongPDG, bool checkBothCharges, bool excl
                  absPDG == 223 || // omega
                  absPDG == 333    // phi
         ;
+    case 904:
+      decision = absPDG == 20443 || //chic1
+                 absPDG == 445 || //chic2
+                 absPDG == 10441 //chic0
+        ;
       break;
     default: // all explicit PDG code cases
       if (checkBothCharges) {
