@@ -1247,9 +1247,9 @@ struct AnalysisDileptonPhoton {
     Produces<aod::DileptonPhotonCandidates> dileptonPhotonCandidatesList; //?? Here I need something else
     OutputObj<THashList> fOutputList{"output"};
     Configurable<string> fConfigTrackCuts{"cfgLeptonCuts", "", "Comma separated list of barrel track cuts"};
-    Configurable<string> fConfigPhotonCuts{"cfgPhotonCuts", "qc,nocut", "Comma separated list of photon cuts"}; //qc,nocut
-    Configurable<float> fConfigDileptonLowMass{"cfgDileptonLowMass", 0.0, "Low mass cut for the dileptons used in analysis"};
-    Configurable<float> fConfigDileptonHighMass{"cfgDileptonHighMass", 5.0, "High mass cut for the dileptons used in analysis"};
+    Configurable<string> fConfigPhotonCuts{"cfgPhotonCuts", "nocut", "Comma separated list of photon cuts"}; //at the moment not used
+    Configurable<float> fConfigDileptonLowMass{"cfgDileptonLowMass", 2.5, "Low mass cut for the dileptons used in analysis"};
+    Configurable<float> fConfigDileptonHighMass{"cfgDileptonHighMass", 3.3, "High mass cut for the dileptons used in analysis"};
 
     Configurable<bool> fConfigFillCandidateTable{"cfgFillCandidateTable", false, "Produce a single flat tables with all relevant information dilepton-track candidates"};
     Configurable<std::string> fConfigMCRecSignals{"cfgBarrelMCRecSignals", "", "Comma separated list of MC signals (reconstructed)"};
@@ -1373,7 +1373,7 @@ struct AnalysisDileptonPhoton {
             VarManager::SetUseVars(fHistMan->GetUsedVars());
             fOutputList.setObject(fHistMan->GetMainHistogramList());
         }
-
+        //Checking for the Photon cut but the variable fNPhotonCutBit is never used again, that is why the photon cut is not implemented at the moment
         TString configCutNamesStr = fConfigPhotonCuts.value;
         if (!configCutNamesStr.IsNull()) {
             std::unique_ptr<TObjArray> objArray(configCutNamesStr.Tokenize(","));
@@ -1387,6 +1387,9 @@ struct AnalysisDileptonPhoton {
     template <int TCandidateType, uint32_t TEventFillMap, uint32_t TEventMCFillMap, uint32_t TTrackFillMap, typename TEvent, typename TPhotons, typename TEventsMC, typename TPhotonsMC, typename TTrack, typename TTracksMC, typename TV0Legs, typename TMCEMParticles, typename TPreslice> //,
     void runDileptonPhoton(TEvent const& event, TPhotons const& v0photons, TPreslice const& perCollision,  soa::Filtered<MyPairCandidatesSelected> const& dileptons, TEventsMC const& eventsMC, TPhotonsMC const& photonsMC,  TTrack const& tracks, TTracksMC const& groupedMCtracks, TV0Legs const& v0legs, TMCEMParticles mcparticles) //TMCEMParticles mcparticles,
     {
+        if (event.globalIndex() == 0) {
+            cout << "new file" << endl;
+        }
         VarManager::ResetValues(0, VarManager::kNVars, fValuesPhoton);
         VarManager::ResetValues(0, VarManager::kNVars, fValuesDilepton);
         VarManager::FillEvent<TEventFillMap>(event, fValuesPhoton);
@@ -1400,19 +1403,6 @@ struct AnalysisDileptonPhoton {
         if (dileptons.size() > 0) {
             for (auto track : tracks) {
                 trackGlobalIndexes.push_back(track.globalIndex());
-                //uint32_t mcDecision_electron = 0;
-                //int isig_electron = 0;
-                //for (auto sig = fRecMCSignals.begin(); sig != fRecMCSignals.end(); sig++, isig_electron++) {
-                //    if ((*sig).CheckSignal(false, track.reducedMCTrack())) {
-                //        mcDecision_electron |= (uint32_t(1) << isig_electron);
-                //    }
-                //} // end loop over MC signals
-                //for (unsigned int isig_electron = 0; isig_electron < fRecMCSignals.size(); isig_electron++) {
-                //    if (mcDecision_electron & (uint32_t(1) << isig_electron)) {
-                //        VarManager::FillTrack<TTrackFillMap>(track, fValuesTrack);
-                //        fHistMan->FillHistClass(Form("LeptonSelected_matchedMC_%s", fRecMCSignalsNames[isig_electron].Data()), fValuesTrack);
-                //    }
-                //}
             }
         }
 
@@ -1546,11 +1536,11 @@ struct AnalysisDileptonPhoton {
                                                 }
                                                 for (unsigned int isig_triple = 0; isig_triple < fRecMCSignals.size(); isig_triple++) {
                                                     if (mcDecision_triple & (uint32_t(1) << isig_triple)) {
-                                                        VarManager::FillTriple(lepton1MC, lepton2MC, trackmc);
+                                                        VarManager::FillTriple(lepton1, lepton2, photon);
                                                         fHistMan->FillHistClass(Form("DileptonPhotonInvMass_matchedMC_%s",fRecMCSignalsNames[isig_triple].Data()),VarManager::fgValues);
                                                     }
                                                     if (mcDecision_triple2 & (uint32_t(1) << isig_triple)) {
-                                                        VarManager::FillTriple(lepton1MC, lepton2MC, trackmc);
+                                                        VarManager::FillTriple(lepton1, lepton2, photon);
                                                         if (abs(VarManager::fgValues[VarManager::kRap]) < 0.9) { //VarManager::kRap
                                                             fHistMan->FillHistClass(Form("DileptonPhotonInvMass_cut_matchedMC_%s", fRecMCSignalsNames[isig_triple].Data()), VarManager::fgValues);
                                                         }
@@ -1654,7 +1644,7 @@ struct AnalysisDileptonPhoton {
                     if (fConfigMCGenTrackCuts) {
                         if (abs(t1.eta()) < 0.9 and abs(t2.eta()) < 0.9) { // eta cut
                             VarManager::FillPairMC(t1, t2);
-                            if (abs(VarManager::fgValues[87]) < 0.9 ) { // rapidity cut
+                            if (abs(VarManager::fgValues[VarManager::kRap]) < 0.9 ) { // rapidity cut
                                 fHistMan->FillHistClass(Form("MCTruthGenPair_cut_%s", sig.GetName()), VarManager::fgValues);
                             }
                         }
@@ -1684,7 +1674,7 @@ struct AnalysisDileptonPhoton {
                     if (fConfigMCGenTrackCuts) {
                         if (abs(t1.eta()) < 0.9 and abs(t2.eta()) < 0.9 and abs(t3.eta()) < 0.9) { // eta cut
                             VarManager::FillTripleMC(t2, t3, t1);
-                            if (abs(VarManager::fgValues[87])<0.9) { //rapidity cut
+                            if (abs(VarManager::fgValues[VarManager::kRap])<0.9) { //rapidity cut
                                 fHistMan->FillHistClass(Form("MCTruthGenTriple_cut_%s", sig.GetName()),VarManager::fgValues);
                             }
                         }
@@ -1761,39 +1751,40 @@ void DefineHistograms(HistogramManager* histMan, TString histClasses)
     }
     if (classStr.Contains("MCTruthGenTriple")) {
       dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "mctruth_triple");
-      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt", "MC generator p_{T} distribution", false, 200, 0.0, 20.0, VarManager::kMCPt);
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt", "MC generator p_{T} distribution", false, 2000, 0.0, 20.0, VarManager::kMCPt);
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Eta", "MC generator #eta distribution", false, 500, -5.0, 5.0, VarManager::kMCEta);
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Phi", "MC generator #varphi distribution", false, 500, -6.3, 6.3, VarManager::kMCPhi);
     }
     if (classStr.Contains("MCTruthGenPair")) {
       dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "mctruth_pair");
-      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt", "MC generator p_{T} distribution", false, 200, 0.0, 20.0, VarManager::kMCPt);
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "MCPt", "MC generator p_{T} distribution", false, 2000, 0.0, 20.0, VarManager::kMCPt);
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Eta", "MC generator #eta distribution", false, 500, -5.0, 5.0, VarManager::kMCEta);
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Phi", "MC generator #varphi distribution", false, 500, -6.3, 6.3, VarManager::kMCPhi);
     }
     if (classStr.Contains("MCTruthGen")) {
       dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "mctruth");
-      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt", "MC generator p_{T} distribution", false, 200, 0.0, 20.0, VarManager::kMCPt);
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt", "MC generator p_{T} distribution", false, 2000, 0.0, 20.0, VarManager::kMCPt);
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Eta", "MC generator #eta distribution", false, 500, -5.0, 5.0, VarManager::kMCEta);
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Phi", "MC generator #varphi distribution", false, 500, -6.3, 6.3, VarManager::kMCPhi);
     }
     if (classStr.Contains("MCTruthGenTriple_cut")) {
       dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "mctruth_triple");
-      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt", "MC generator p_{T} distribution", false, 200, 0.0, 20.0, VarManager::kPairPt);
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt", "MC generator p_{T} distribution", false, 2000, 0.0, 20.0, VarManager::kPairPt);
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Eta", "MC generator #eta distribution", false, 500, -5.0, 5.0, VarManager::kPairEta);
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Phi", "MC generator #varphi distribution", false, 500, -6.3, 6.3, VarManager::kMCPhi);
     }
     if (classStr.Contains("MCTruthGenPair_cut")) {
       dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "mctruth_pair");
-      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt", "MC generator p_{T} distribution", false, 200, 0.0, 20.0, VarManager::kPt);
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "MCPt", "MC generator p_{T} distribution", false, 2000, 0.0, 20.0, VarManager::kMCPt);
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Eta", "MC generator #eta distribution", false, 500, -5.0, 5.0, VarManager::kEta);
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Phi", "MC generator #varphi distribution", false, 500, -6.3, 6.3, VarManager::kMCPhi);
     }
     if (classStr.Contains("MCTruthGen_cut")) {
       dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "mctruth");
-      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt", "MC generator p_{T} distribution", false, 200, 0.0, 20.0, VarManager::kPt);
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt", "MC generator p_{T} distribution", false, 2000, 0.0, 20.0, VarManager::kPt);
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Eta", "MC generator #eta distribution", false, 500, -5.0, 5.0, VarManager::kMCEta);
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Phi", "MC generator #varphi distribution", false, 500, -6.3, 6.3, VarManager::kMCPhi);
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt_photon", "MC generator p_{T} distribution", false, 500, 0.0, 5.0, VarManager::kPt);
     }
     if (classStr.Contains("DileptonsSelected")) {
       dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "pair", "barrel,dimuon");

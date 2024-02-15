@@ -460,6 +460,8 @@ class VarManager : public TObject
 
     //deltaMass = kPairMass - kPairMassDau
     kDeltaMass,
+    //deltaMass_jpsi = kPairMass - kPairMassDau +3.096900
+    kDeltaMass_jpsi,
 
     kNVars
   }; // end of Variables enumeration
@@ -1817,6 +1819,7 @@ void VarManager::FillTriple(T1 const& t1, T2 const& t2, T3 const& t3, float* val
     float m1 = o2::constants::physics::MassElectron;
     float m2 = o2::constants::physics::MassElectron;
     float m3 = o2::constants::physics::MassPhoton;
+    float m4 = o2::constants::physics::MassJPsi;
 
     ROOT::Math::PtEtaPhiMVector v1(t1.pt(), t1.eta(), t1.phi(), m1);
     ROOT::Math::PtEtaPhiMVector v2(t2.pt(), t2.eta(), t2.phi(), m2);
@@ -1836,7 +1839,10 @@ void VarManager::FillTriple(T1 const& t1, T2 const& t2, T3 const& t3, float* val
     values[kEta2] = t2.eta();
     values[kDeltaEta] = v12.Eta();
     values[VarManager::kDeltaMass] = v123.M() - v12.M();
+    values[VarManager::kDeltaMass_jpsi] = v123.M() - v12.M() + m4;
     values[kRap] = v123.Rapidity();
+    values[kPt1] = t1.pt();
+    values[kPt2] = t2.pt();
 }
 
 template <int pairType, typename T1, typename T2>
@@ -1904,9 +1910,14 @@ void VarManager::FillPairMC(T1 const& t1, T2 const& t2, float* values, PairCandi
   ROOT::Math::PtEtaPhiMVector v12 = v1 + v2;
   values[kMass] = v12.M();
   values[kPt] = v12.Pt();
+  values[kPairPtDau] = v12.Pt();
   values[kEta] = v12.Eta();
   values[kPhi] = v12.Phi();
   values[kRap] = -v12.Rapidity();
+  values[kEta1] = t1.eta();
+  values[kEta2] = t2.eta();
+  values[kPt1] = t1.pt();
+  values[kPt2] = t2.pt();
 }
 
 template <typename T1, typename T2, typename T3>
@@ -1920,6 +1931,7 @@ void VarManager::FillTripleMC(T1 const& t1, T2 const& t2, T3 const& t3,  float* 
         float m1 = o2::constants::physics::MassElectron;
         float m2 = o2::constants::physics::MassElectron;
         float m3 = o2::constants::physics::MassPhoton;
+        float m4 = o2::constants::physics::MassJPsi;
         ROOT::Math::PtEtaPhiMVector v1(t1.pt(), t1.eta(), t1.phi(), m1);
         ROOT::Math::PtEtaPhiMVector v2(t2.pt(), t2.eta(), t2.phi(), m2);
         ROOT::Math::PtEtaPhiMVector v12 = v1 + v2;
@@ -1938,7 +1950,10 @@ void VarManager::FillTripleMC(T1 const& t1, T2 const& t2, T3 const& t3,  float* 
         values[kEta2] = t2.eta();
         values[kDeltaEta] = v12.Eta();
         values[VarManager::kDeltaMass] = v123.M()-v12.M();
+        values[VarManager::kDeltaMass_jpsi] = v123.M() - v12.M() + m4;
         values[kRap] = -v123.Rapidity();
+        values[kPt1] = t1.pt();
+        values[kPt2] = t2.pt();
     }
 }
 
@@ -2691,6 +2706,8 @@ void VarManager::FillDileptonPhoton(T1 const& dilepton, T2 const& photon, float*
         values[kDeltaEta] = dilepton.eta();
         values[kEta] = photon.eta();
         values[VarManager::kDeltaMass] = v12.M()-dilepton.mass();
+        float m4 = o2::constants::physics::MassJPsi;
+        values[VarManager::kDeltaMass_jpsi] = v12.M() - dilepton.mass() + m4;
         values[kRap] = v12.Rapidity();
     }
 }
