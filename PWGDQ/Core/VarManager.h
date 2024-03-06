@@ -644,7 +644,7 @@ class VarManager : public TObject
   template <int pairType, uint32_t fillMap, typename T1, typename T2>
   static void FillPair(T1 const& t1, T2 const& t2, float* values = nullptr);
   template <typename T1, typename T2, typename T3>
-  static void FillTriple(T1 const& t1, T2 const& t2, T3 const& t3, float* values = nullptr);
+  static void FillTriple(T1 const& t1, T2 const& t2, T3 const& t3, float* values = nullptr, PairCandidateType pairType = kTripleCandidateToEEPhoton);
   template <int pairType, typename T1, typename T2>
   static void FillPairME(T1 const& t1, T2 const& t2, float* values = nullptr);
   template <typename T1, typename T2>
@@ -1531,8 +1531,8 @@ void VarManager::FillPhoton(T const& track, float* values) {
         }
         values[kEta] = track.eta();
         values[kPhi] = track.phi();
-        values[kRap] = track.y();
-        values[kMassDau] = track.weight();
+        values[kRap] = track.eta(); //photon does not know rapidity .y()
+        values[kMassDau] = track.mGamma();
     }
 }
 
@@ -1810,39 +1810,39 @@ void VarManager::FillPair(T1 const& t1, T2 const& t2, float* values)
 }
 
 template <typename T1, typename T2, typename T3>
-void VarManager::FillTriple(T1 const& t1, T2 const& t2, T3 const& t3, float* values) {
+void VarManager::FillTriple(T1 const& t1, T2 const& t2, T3 const& t3, float* values, PairCandidateType pairType) {
 
     if (!values) {
         values = fgValues;
     }
+    if (pairType == kTripleCandidateToEEPhoton) {
+        float m1 = o2::constants::physics::MassElectron;
+        float m3 = o2::constants::physics::MassPhoton;
+        float m4 = o2::constants::physics::MassJPsi;
 
-    float m1 = o2::constants::physics::MassElectron;
-    float m2 = o2::constants::physics::MassElectron;
-    float m3 = o2::constants::physics::MassPhoton;
-    float m4 = o2::constants::physics::MassJPsi;
-
-    ROOT::Math::PtEtaPhiMVector v1(t1.pt(), t1.eta(), t1.phi(), m1);
-    ROOT::Math::PtEtaPhiMVector v2(t2.pt(), t2.eta(), t2.phi(), m2);
-    ROOT::Math::PtEtaPhiMVector v3(t3.pt(), t3.eta(), t3.phi(), m3);
-    ROOT::Math::PtEtaPhiMVector v12 = v1 + v2;
-    ROOT::Math::PtEtaPhiMVector v123 = v12 + v3;
-    values[kPairMass] = v123.M();
-    values[kPairPt] = v123.Pt();
-    values[kPairEta] = v123.Eta();
-    values[kPairPhi] = v123.Phi();
-    values[kPairMassDau] = v12.M();
-    values[kMassDau] = m3;
-    values[kPairPtDau] = v12.Pt();
-    values[kPt] = t3.pt();
-    values[kEta] = t3.eta();
-    values[kEta1] = t1.eta();
-    values[kEta2] = t2.eta();
-    values[kDeltaEta] = v12.Eta();
-    values[VarManager::kDeltaMass] = v123.M() - v12.M();
-    values[VarManager::kDeltaMass_jpsi] = v123.M() - v12.M() + m4;
-    values[kRap] = v123.Rapidity();
-    values[kPt1] = t1.pt();
-    values[kPt2] = t2.pt();
+        ROOT::Math::PtEtaPhiMVector v1(t1.pt(), t1.eta(), t1.phi(), m1);
+        ROOT::Math::PtEtaPhiMVector v2(t2.pt(), t2.eta(), t2.phi(), m1);
+        ROOT::Math::PtEtaPhiMVector v3(t3.pt(), t3.eta(), t3.phi(), m3);
+        ROOT::Math::PtEtaPhiMVector v12 = v1 + v2;
+        ROOT::Math::PtEtaPhiMVector v123 = v12 + v3;
+        values[kPairMass] = v123.M();
+        values[kPairPt] = v123.Pt();
+        values[kPairEta] = v123.Eta();
+        values[kPairPhi] = v123.Phi();
+        values[kPairMassDau] = v12.M();
+        values[kMassDau] = m3;
+        values[kPairPtDau] = v12.Pt();
+        values[kPt] = t3.pt();
+        values[kEta] = t3.eta();
+        values[kEta1] = t1.eta();
+        values[kEta2] = t2.eta();
+        values[kDeltaEta] = v12.Eta();
+        values[VarManager::kDeltaMass] = v123.M() - v12.M();
+        values[VarManager::kDeltaMass_jpsi] = v123.M() - v12.M() + m4;
+        values[kRap] = v123.Rapidity();
+        values[kPt1] = t1.pt();
+        values[kPt2] = t2.pt();
+    }
 }
 
 template <int pairType, typename T1, typename T2>

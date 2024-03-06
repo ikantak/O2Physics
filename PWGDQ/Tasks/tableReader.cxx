@@ -1530,14 +1530,14 @@ struct AnalysisDileptonHadron {
 };
 
 struct AnalysisDileptonPhoton {
-    // This task combines Dilepton with photons
+    // This task combines Dilepton with photons to be able to reconstruct decays like the radiative decay of chic
     OutputObj<THashList> fOutputList{"output"};
 
-    Configurable<string> fConfigPhotonCuts{"cfgPhotonCuts", "qc,nocut", "Comma separated list of photon cuts"}; //qc,nocut
-    Configurable<std::string> fConfigAddDileptonPhotonHistogram{"cfgAddDileptonPhotonHistogram", "", "Comma separated list of histograms"};
-    Configurable<float> fConfigDileptonLowMass{"cfgDileptonLowMass", 0., "Low mass cut for the dileptons used in analysis"};
-    Configurable<float> fConfigDileptonHighMass{"cfgDileptonHighMass", 5., "High mass cut for the dileptons used in analysis"};
-    Configurable<bool> fConfigDetectorCut{"cfgDetectorCut", true, "Considering eta and rapaditity cut of the ALICE detector"};
+    Configurable<string> fConfigPhotonCuts{"cfgPhotonCuts", "nocut", "Comma separated list of photon cuts"}; //qc,nocut
+    //Configurable<std::string> fConfigAddDileptonPhotonHistogram{"cfgAddDileptonPhotonHistogram", "", "Comma separated list of histograms"};
+    Configurable<float> fConfigDileptonLowMass{"cfgDileptonLowMass", 2.5, "Low mass cut for the dileptons used in analysis"};
+    Configurable<float> fConfigDileptonHighMass{"cfgDileptonHighMass", 3.3, "High mass cut for the dileptons used in analysis"};
+    Configurable<bool> fConfigAcceptanceCut{"cfgAcceptanceCut", true, "Considering eta and rapaditity cut of the ALICE detector"};
 
 
     Filter eventFilter = aod::dqanalysisflags::isEventSelected == 1;
@@ -1562,9 +1562,9 @@ struct AnalysisDileptonPhoton {
         fHistMan->SetDefaultVarNames(VarManager::fgVariableNames, VarManager::fgVariableUnits);
         //definitions of histograms
         if (context.mOptions.get<bool>("processSkimmed")) {
-            DefineHistograms(fHistMan, "DileptonsSelected;DileptonPhotonInvMass", fConfigAddDileptonPhotonHistogram); // define all histograms //DileptonPhotonCorrelation
-            if (fConfigDetectorCut) {
-                DefineHistograms(fHistMan, "DileptonsSelected_cut;DileptonPhotonInvMass_cut", fConfigAddDileptonPhotonHistogram);
+            DefineHistograms(fHistMan, "DileptonsSelected;DileptonPhotonInvMass"); // define all histograms , fConfigAddDileptonPhotonHistogram
+            if (fConfigAcceptanceCut) {
+                DefineHistograms(fHistMan, "DileptonsSelected_cut;DileptonPhotonInvMass_cut"); //, fConfigAddDileptonPhotonHistogram
             }
         }
         VarManager::SetUseVars(fHistMan->GetUsedVars());
@@ -1592,12 +1592,9 @@ struct AnalysisDileptonPhoton {
         // TO DO: remove it once the issue with lepton index is solved
         int indexOffset = -999;
         std::vector<int> trackGlobalIndexes;
-
-
+        
         // loop once over dileptons for QA purposes
         for (auto dilepton : dileptons) {
-            VarManager::FillTrack<fgDileptonFillMap>(dilepton, fValuesDilepton);
-            fHistMan->FillHistClass("DileptonsSelected", fValuesDilepton);
 
             // get the index of the electron legs
             int indexLepton1 = dilepton.index0Id();
@@ -1612,14 +1609,6 @@ struct AnalysisDileptonPhoton {
             auto lepton1 = tracks.iteratorAt(indexLepton1 - indexOffset);
             auto lepton2 = tracks.iteratorAt(indexLepton2 - indexOffset);
 
-            if (fConfigDetectorCut) {
-                if (abs(lepton1.eta()) < 0.9 and abs(lepton2.eta()) < 0.9) {
-                    if (abs(fValuesDilepton[87]) <0.9) {
-                        fHistMan->FillHistClass("DileptonsSelected_cut", fValuesDilepton);
-                    }
-                }
-            }
-
             // Check that the dilepton has zero charge
             if (dilepton.sign() != 0) {
                 continue;
@@ -1629,15 +1618,25 @@ struct AnalysisDileptonPhoton {
             if (lepton1.sign() * lepton2.sign() > 0) {
                 continue;
             }
+            VarManager::FillTrack<fgDileptonFillMap>(dilepton, fValuesDilepton);
+            fHistMan->FillHistClass("DileptonsSelected", fValuesDilepton);
+            if (fConfigAcceptanceCut) {
+                if (abs(lepton1.eta()) < 0.9 and abs(lepton2.eta()) < 0.9) {
+                    if (abs(fValuesDilepton[VarManager::kRap]) <0.9) {
+                        fHistMan->FillHistClass("DileptonsSelected_cut", fValuesDilepton);
+                    }
+                }
+            }
+
 
             auto photons_coll = v0photons.sliceBy(perCollision, event.globalIndex());
             for (auto& photon : photons_coll) {
                 if (event.globalIndex() == photon.collisionId()) {
                     VarManager::FillDileptonPhoton(dilepton, photon, fValuesPhotons);
                     fHistMan->FillHistClass("DileptonPhotonInvMass", fValuesPhotons);
-                    if (fConfigDetectorCut) {
+                    if (fConfigAcceptanceCut) {
                         if (abs(lepton1.eta()) < 0.9 and abs(lepton2.eta()) < 0.9 and abs(photon.eta()) <0.9) {
-                            if (abs(fValuesPhotons[87]) < 0.9) {
+                            if (abs(fValuesPhotons[VarManager::kRap]) < 0.9) {
                                 fHistMan->FillHistClass("DileptonPhotonInvMass_cut", fValuesPhotons);
                             }
                         }
@@ -1731,7 +1730,6 @@ void DefineHistograms(HistogramManager* histMan, TString histClasses, Configurab
     if (classStr.Contains("DileptonHadronCorrelation")) {
       dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "dilepton-hadron-array-correlation");
     }
-
     if (classStr.Contains("DileptonPhotonInvMass")) {
       dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "dilepton-photon-mass");
     }
