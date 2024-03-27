@@ -1534,7 +1534,7 @@ struct AnalysisDileptonPhoton {
     OutputObj<THashList> fOutputList{"output"};
 
     Configurable<string> fConfigPhotonCuts{"cfgPhotonCuts", "nocut", "Comma separated list of photon cuts"}; //qc,nocut
-    //Configurable<std::string> fConfigAddDileptonPhotonHistogram{"cfgAddDileptonPhotonHistogram", "", "Comma separated list of histograms"};
+    Configurable<std::string> fConfigAddDileptonPhotonHistogram{"cfgAddDileptonPhotonHistogram", "", "Comma separated list of histograms"};
     Configurable<float> fConfigDileptonLowMass{"cfgDileptonLowMass", 2.5, "Low mass cut for the dileptons used in analysis"};
     Configurable<float> fConfigDileptonHighMass{"cfgDileptonHighMass", 3.3, "High mass cut for the dileptons used in analysis"};
     Configurable<bool> fConfigAcceptanceCut{"cfgAcceptanceCut", true, "Considering eta and rapaditity cut of the ALICE detector"};
@@ -1562,9 +1562,9 @@ struct AnalysisDileptonPhoton {
         fHistMan->SetDefaultVarNames(VarManager::fgVariableNames, VarManager::fgVariableUnits);
         //definitions of histograms
         if (context.mOptions.get<bool>("processSkimmed")) {
-            DefineHistograms(fHistMan, "DileptonsSelected;DileptonPhotonInvMass"); // define all histograms , fConfigAddDileptonPhotonHistogram
+            DefineHistograms(fHistMan, "DileptonsSelected;DileptonPhotonInvMass", fConfigAddDileptonPhotonHistogram); // define all histograms
             if (fConfigAcceptanceCut) {
-                DefineHistograms(fHistMan, "DileptonsSelected_cut;DileptonPhotonInvMass_cut"); //, fConfigAddDileptonPhotonHistogram
+                DefineHistograms(fHistMan, "DileptonsSelected_cut;DileptonPhotonInvMass_cut", fConfigAddDileptonPhotonHistogram); //
             }
         }
         VarManager::SetUseVars(fHistMan->GetUsedVars());
@@ -1592,7 +1592,7 @@ struct AnalysisDileptonPhoton {
         // TO DO: remove it once the issue with lepton index is solved
         int indexOffset = -999;
         std::vector<int> trackGlobalIndexes;
-        
+
         // loop once over dileptons for QA purposes
         for (auto dilepton : dileptons) {
 
