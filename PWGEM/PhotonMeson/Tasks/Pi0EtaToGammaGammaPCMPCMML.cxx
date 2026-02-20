@@ -34,3 +34,4 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
     adaptAnalysisTask<Pi0EtaToGammaGamma<PairType::kPCMPCM, MyV0Photons, aod::V0Legs>>(cfgc, TaskName{"pi0eta-to-gammagamma-pcmpcm"}),
   };
 }
+ 
